@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenCode Trace Review"
+  short_description: "评估 OpenCode 运行轨迹，诊断行为与成本，并用可追溯证据比较结果"
+  default_prompt: "使用 $opencode-trace-review 分析我提供的 OpenCode 会话，给出带证据的诊断和报告。"

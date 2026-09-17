@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.DS_Store
+.env
+.env.*
+!.env.example
+.agent-review/
+review-data/
+node_modules/
+dist/
