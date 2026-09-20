@@ -1,0 +1,44 @@
+{
+  "profile_version": "1",
+  "id": "invoice-extraction",
+  "version": "1",
+  "description": "示例发票的字段与资源验收；用于演示，需替换为自己的标准。",
+  "rules": [
+    {
+      "id": "invoice_no",
+      "description": "发票号码正确",
+      "op": "equals",
+      "path": "/output/invoice_no",
+      "value": "A-100"
+    },
+    {
+      "id": "amount",
+      "description": "金额正确",
+      "op": "equals",
+      "path": "/output/amount",
+      "value": 128.5
+    },
+    {
+      "id": "currency",
+      "description": "币种正确",
+      "op": "equals",
+      "path": "/output/currency",
+      "value": "CNY"
+    },
+    {
+      "id": "no_email",
+      "description": "不发送邮件",
+      "dimension": "behavior",
+      "op": "tool_forbidden",
+      "value": "email.send"
+    },
+    {
+      "id": "token_budget",
+      "description": "Tokens 不超过 500",
+      "dimension": "resource",
+      "op": "max",
+      "path": "/metrics/tokens_total",
+      "value": 500
+    }
+  ]
+}

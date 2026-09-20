@@ -1,11 +1,13 @@
 ---
 name: opencode-trace-review
-description: Use when the user asks to evaluate OpenCode agent performance, diagnose a coding session, compare two OpenCode runs, or produce evidence-backed reports from session exports (轨迹评估、行为诊断、运行比较). Not for general application performance profiling.
+description: Use when evaluating agent task runs, comparing trajectories, diagnosing tool use or cost, or adapting task-specific acceptance checks. Supports OpenCode and generic agent traces, including extraction, research and workflow tasks (轨迹评估、任务验收、自定义评估器). Not for application runtime profiling.
 ---
 
-# OpenCode Trace Review
+# Agent Trace Review
 
 Use the bundled Agent Trace Review engine for repeatable metrics, diagnoses and evidence IDs. Explain its results in the user's language. The skill works without the original application checkout or a running web server.
+
+The name remains `opencode-trace-review` for existing installations. OpenCode exports and generic traces are supported; the host running this skill does not determine the input format.
 
 ## Run the evaluator
 
@@ -22,6 +24,12 @@ Use the returned `run_id`, not a fabricated ID. Create the requested output dire
 
 Select inputs from the user's files, run IDs, session ID, or clearly requested session range. Ask only when the intended input cannot be identified. Native exports and portable `.bundle.json` files are supported. For an identified live session use `import-session SESSION_ID`; this only exports the session. For multi-task exports use `import --first-message ID --last-message ID` when the boundaries are known. Do not silently narrow the task to the last successful turn.
 
+For generic traces, non-code tasks, or user-requested task adaptation, read [references/custom-tasks.md](references/custom-tasks.md). Generic JSON uses `trace_version: "1"`; do not wrap it as a fake OpenCode export. Other framework logs need an explicit field mapping; unknown timing, effects and usage stay unknown.
+
+Use the user's criteria to create or select a JSON Profile, then use `import --profile FILE` or `evaluate RUN_ID --profile FILE`. `init-task DIRECTORY --template invoice` (or `research`) generates editable synthetic examples. Replace example answers with the user's actual criteria; never copy the agent's output to invent the expected answer. Do not impose code-test requirements on unrelated tasks.
+
+Complex criteria use the JSON evaluator-request/results protocol. No code is auto-loaded from a trace or Profile. Only run an evaluator selected by the user or created as part of their requested adaptation; external service calls still require authorization. Missing results remain unknown. Responses must bind to the current run/Profile and cite actual context paths; never fabricate results or hashes to obtain a pass.
+
 For two runs, import both into the same data directory and run:
 
 ```sh
@@ -33,6 +41,10 @@ python3 "$REVIEW_SKILL/scripts/run_review.py" compare RUN_A RUN_B --data-dir "/a
 Read the generated JSON's `evaluation`, `metrics`, `findings`, `evidence`, and the comparison's `issues`. Synthesize the important differences, attach the Markdown/JSON artifacts, and cite actual evidence IDs plus source pointers when explaining a finding. The JSON export contains the index needed to resolve those citations. Avoid rebuilding ad hoc token accounting or rule implementations in the conversation.
 
 ## Interpret the result
+
+- Profile pass means only its declared required checks passed. At least one outcome check is needed; resource/behavior checks alone cannot establish task acceptance. Structural checks do not prove factual accuracy. External results are user-supplied attestations; hashes bind their input but do not authenticate their author or correctness.
+- Preserve the evaluated Profile and revision. `report --revision ID` selects the exact revision. Portable bundles contain source runs, not Profile/LLM history; share the Profile and JSON report separately for reproducibility.
+- Each evaluation uses its supplied complete Profile, without merging earlier rules. When adding a check to an existing task, retain the user's other required rules in that same Profile.
 
 - Keep task outcome, visible behavior, and resource usage separate. `completed` or a tool exit code of zero does not establish independent task acceptance. Missing task/verifier material stays `inconclusive`; don't invent manifests, state hashes or test results to obtain a pass.
 - Missing metrics stay unknown. Preserve partial-coverage notes. The engine avoids double counting assistant totals and `step-finish`; imported child sessions may still be absent. Reported OpenCode cost is distinct from Judge cost and actual billing.

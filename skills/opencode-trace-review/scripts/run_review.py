@@ -24,8 +24,21 @@ def build_command(skill_root: Path, uv: str, arguments: list[str]) -> list[str]:
     wheel = assets / metadata["wheel"]
     if wheel.resolve().parent != assets.resolve():
         raise ValueError("运行包路径校验失败，请重新安装 skill。")
-    if hashlib.sha256(wheel.read_bytes()).hexdigest() != metadata["sha256"]:
+    content = wheel.read_bytes()
+    if hashlib.sha256(content).hexdigest() != metadata["sha256"]:
         raise ValueError("运行包 SHA-256 校验失败，请重新安装 skill。")
+    # uv may reuse an environment for the same wheel path/version after a rebuild.
+    # A content-addressed path makes the dependency identity change with its bytes.
+    runtime = Path(tempfile.gettempdir()) / "opencode-trace-review-runtime" / metadata["sha256"]
+    runtime.mkdir(parents=True, exist_ok=True)
+    cached_wheel = runtime / wheel.name
+    if not cached_wheel.exists():
+        with tempfile.NamedTemporaryFile(dir=runtime, delete=False) as pending:
+            pending.write(content)
+            pending_path = pending.name
+        os.replace(pending_path, cached_wheel)
+    if hashlib.sha256(cached_wheel.read_bytes()).hexdigest() != metadata["sha256"]:
+        raise ValueError("运行包缓存校验失败，请清理对应 opencode-trace-review-runtime 缓存后重试。")
     requirements = assets / ("requirements-scout.txt" if scout else "requirements.txt")
     return [
         uv,
@@ -37,7 +50,7 @@ def build_command(skill_root: Path, uv: str, arguments: list[str]) -> list[str]:
         "--with-requirements",
         str(requirements),
         "--with",
-        str(wheel),
+        str(cached_wheel),
         "agent-review",
         *arguments,
     ]

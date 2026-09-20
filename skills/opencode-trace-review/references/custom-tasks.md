@@ -1,0 +1,131 @@
+# 通用 Agent 与自定义任务评估
+
+适用于提取、调研、文档处理、浏览器和业务流程等任务的可见轨迹。先把记录转换为通用 JSON，再提供任务规则或专项评估器。当前不会自动识别任意框架日志。
+
+下文 `agent-review` 表示引擎命令。通过 skill 使用时替换为 `python3 "$REVIEW_SKILL/scripts/run_review.py"`。操作使用同一个绝对 `--data-dir`；RUN_ID 使用导入返回值。
+
+## 从模板开始
+
+```sh
+agent-review init-task /absolute/my-task --template invoice
+agent-review import /absolute/my-task/trace.json --profile /absolute/my-task/profile.json --data-dir /absolute/review-data
+agent-review report RUN_ID --data-dir /absolute/review-data --output /absolute/report.md
+```
+
+invoice 包含合成轨迹、JSON 规则、external 规则及可运行的 Python 评估器。research 检查交付结构，并将事实核验保留为必需的 external 检查；没有专项结果时保持 inconclusive。模板拒绝覆盖非空目录。
+
+通常只需修改 profile.json；复杂业务再修改 evaluator.py，或用其他语言实现同一协议。示例标准答案必须替换为用户真实的验收标准。
+
+## 通用轨迹合同
+
+```json
+{
+  "trace_version": "1",
+  "framework": "my-agent",
+  "run_id": "task-001",
+  "coverage": "partial",
+  "events": [
+    {"id": "call-1", "kind": "tool", "tool": "ocr.extract", "effect": "read", "status": "completed", "input": {"document": "invoice"}, "output": "CNY 128.50"},
+    {"id": "model-1", "kind": "llm", "status": "completed", "usage": {"tokens": {"input": 120, "output": 30, "total": 150}, "cost_usd": 0.001}}
+  ],
+  "output": {"amount": 128.5, "currency": "CNY"},
+  "artifacts": {"reference_invoice": {"amount": "128.50"}}
+}
+```
+
+- events 按执行顺序排列，id 唯一。kind 支持 tool/llm/message/retry/error；不接收隐藏推理文本。
+- effect 为 read/write/unknown，仅明确只读的调用参与重复读取检测，不能根据陌生工具名猜测。
+- status 为 completed/error/running/skipped/unknown；未知结果不能填写 completed。
+- usage 只放在独立 llm 调用事件上，不能同时记录父任务合计和子调用。未知字段省略，不填写 0。cost_usd 已换算为美元；引擎不换汇或查询价格。
+- 事件和轨迹可提供 start_ms/end_ms，单位毫秒；数组顺序决定行为先后。
+- coverage 默认为 partial。complete 是导出方对全部调用的声明；部分轨迹不能证明工具未被调用，资源阈值也可能保持 unknown。
+- output 是最终 JSON 结果，artifacts 是内嵌辅助材料。导入器不读取其中引用的路径或 URL。参考答案应由验收方提供。
+- 可选 task_prompt/title/agent_version/models/demo。合成数据设置 demo: true。
+
+其他框架需编写转换器，明确映射上述字段，不补造未观测数据。完整机器合同见 `schema --output schema.json` 中的 generic_trace。
+
+## JSON 任务规则（Profile）
+
+```json
+{
+  "profile_version": "1", "id": "invoice-extraction", "version": "1",
+  "rules": [
+    {"id": "amount", "dimension": "outcome", "op": "equals", "path": "/output/amount", "value": 128.5},
+    {"id": "budget", "dimension": "resource", "op": "max", "path": "/metrics/tokens_total", "value": 500},
+    {"id": "no_email", "dimension": "behavior", "op": "tool_forbidden", "value": "email.send"}
+  ]
+}
+```
+
+id 唯一，dimension 默认 outcome，required 默认 true。内容变化会改变 Profile 哈希，即使没有修改 version，也不会与旧标准视作相同。
+
+| op | 用途 |
+| --- | --- |
+| exists | 字段存在；若整个材料缺失则 unknown |
+| equals | JSON 值相等，布尔值与数字严格区分 |
+| contains | 字符串包含、数组包含一个值、对象包含键 |
+| min / max | 数值阈值 |
+| length_min / length_max | 字符串、数组、对象的长度/数量 |
+| tool_required / tool_forbidden | 是否观察到指定工具调用，不推断执行效果 |
+| external | 用户自己的程序或人工验收 |
+
+path 使用 JSON Pointer，如 /output/amount、/artifacts/reference_invoice/amount、/events/0/output、/metrics/cost_usd。键名中的 / 写为 ~1，~ 写为 ~0。事件 output 是显示文本，复杂结果放在顶层 output 或 artifacts。Profile 不支持动态代码和命令。
+
+每项结果为 pass/fail/unknown。缺字段一般为 unknown；必填字段增加 exists 规则。部分指标不能证明满足预算，脱敏值不能证明匹配。整体通过需要全部必需检查通过，且存在任务结果验收；可选检查不单独阻止通过。代码任务原有验收失败不会被 Profile 覆盖。结构符合不证明内容真实。
+
+## 自定义评估器：跨语言 JSON 接口
+
+声明 `{"id":"invoice_total","op":"external"}` 后：
+
+```sh
+agent-review evaluator-request RUN_ID --profile /absolute/my-task/external.profile.json --data-dir /absolute/review-data --output /absolute/my-task/request.json
+python3 /absolute/my-task/evaluator.py /absolute/my-task/request.json /absolute/my-task/results.json
+agent-review evaluate RUN_ID --profile /absolute/my-task/external.profile.json --results /absolute/my-task/results.json --data-dir /absolute/review-data
+```
+
+第二步由用户选择执行；引擎不会自动加载或执行评估代码。可改用 Node、Go、人工复核或外部服务；自行控制数据发送与调用费用。
+
+请求包含 protocol/run_id/input_hash/profile_hash/context/checks。context 包含可见输入快照、output、artifacts、events、metrics 和 metric_status；checks 只列 external 规则，可通过规则的 value 传入自定义参数。
+
+响应保留请求的四个身份字段，增加 results：
+
+```json
+{
+  "protocol": "agent-review/evaluator-v1",
+  "run_id": "使用请求里的值",
+  "input_hash": "使用请求里的值",
+  "profile_hash": "使用请求里的值",
+  "results": [
+    {"id": "invoice_total", "status": "pass", "explanation": "与独立参考金额匹配", "evidence_paths": ["/output/amount", "/artifacts/reference_invoice/amount"]}
+  ]
+}
+```
+
+这仅展示结构。status 为 pass/fail/unknown；pass/fail 必须引用 context 中存在的路径。输入/规则变化、未知规则 ID、重复结果或不存在的引用会被拒绝。缺少的 external 结果保持 unknown。报告保存规则、结果和证据快照；哈希绑定不能认证作者或证明评估器正确运行。
+
+evaluate 返回 revision_id；`report RUN_ID --revision REVISION_ID` 导出确切版本。每个版本使用本次指定的完整 Profile，不自动合并历史规则；需要同时保留字段、预算和外部验收时，把它们放在同一 Profile 中。JSON 报告包含 Profile 和检查结果。可移植 bundle 仅保存源轨迹与任务材料，不含评估历史；复现时保留 Profile、请求和结果，并重新评估。
+
+## HTTP 与 Python 接口
+
+本地服务：`agent-review serve`。写请求包含 `X-Review-Request: 1`；JSON 请求还需 `Content-Type: application/json`。
+
+- POST /api/imports：multipart 的 file，可附加 profile_file。
+- POST /api/runs/{id}/evaluator-request：请求体为 Profile JSON。
+- POST /api/runs/{id}/profile-evaluations：请求体为 `{"profile": Profile, "results": 可选响应}`。
+- GET /api/schema：完整合同；/docs 提供交互式 API 文档。
+
+安装引擎包后也可调用 Python 接口：
+
+```python
+from agent_trace_review.service import ingest
+from agent_trace_review.storage import Store
+from agent_trace_review.profiles import evaluator_request, evaluate_profile
+
+store = Store("review-data")
+run, evaluation, created = ingest(store, trace_bytes, profile=profile_dict)
+request = evaluator_request(run, profile_dict)
+# 自己的受信任程序执行专项评估，生成 response_dict。
+evaluation = evaluate_profile(store, run, profile_dict, response_dict)
+```
+
+正式比较需提供相同任务、初始输入状态、环境、验收集合和预算。可用 Task Manifest 的 initial_state_hash 表达非 Git 初始状态，checks 留空时由 Profile 验收。缺少条件仅作描述性比较。
