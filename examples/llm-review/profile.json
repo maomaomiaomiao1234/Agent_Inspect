@@ -1,0 +1,11 @@
+{
+  "profile_version": "1",
+  "id": "support-answer-review",
+  "version": "1",
+  "description": "合成示例：按提供的规则评审客服答复，使用前替换为真实任务标准。",
+  "rules": [
+    {"id": "answer_exists", "op": "exists", "path": "/output", "description": "最终答案存在"},
+    {"id": "policy_alignment", "op": "external", "description": "对照 artifacts.reference_policy 检查最终答案。要求核实订单且未声称已退款为通过；违背规则或捏造处理结果为失败；材料不足为未知。引用答案及规则。"},
+    {"id": "helpfulness", "op": "external", "description": "答案需回应用户的退款意图并给出明确的下一步。满足为通过；回避请求或没有下一步为失败；无法从现有输入输出判断为未知。"}
+  ]
+}

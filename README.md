@@ -1,10 +1,38 @@
 # Agent Trace Review
 
-通用 Agent 与 OpenCode 的任务评估 skill，当前引擎版本 **0.2.0**。分析已有轨迹，分别报告任务结果、执行行为和资源使用，并为用户自己的任务提供可扩展验收接口。
+通用 Agent 与 OpenCode 的任务评估 skill，当前引擎版本 **0.3.0**。分析已有轨迹，分别报告任务结果、执行行为和资源使用，并为用户自己的任务提供可扩展验收接口。
 
 Skill 名称保留 **opencode-trace-review**，已有调用方式继续有效。
 
-## 0.2.0 新增能力
+## 0.3.0：API + Token 大模型评审
+
+只有 input → agent → output 也可以评估。在网页“LLM 评审”页填写 **API 地址、访问 Token、模型名和评审标准**，或通过 CLI/HTTP/Python 调用。
+
+- 支持 OpenAI 兼容的 Chat Completions API，无需 Scout extra。
+- Profile 的 external 条目交给模型评审，其他检查继续本地执行。
+- 每项返回通过/失败/未知、理由和证据引用；报告明确标明模型判断。
+- Token 不写入提示词、报告或浏览器存储；网页输入框在请求结束后清空。
+- 无自动重试；调用失败保留旧评估，相同输入/规则/配置复用已保存结果。
+
+在克隆的仓库根目录运行：
+
+```sh
+python3 skills/opencode-trace-review/scripts/run_review.py init-task ./my-review --template llm-review
+export AGENT_REVIEW_LLM_API_URL="https://你的服务商/v1"
+export AGENT_REVIEW_LLM_MODEL="你的模型ID"
+export AGENT_REVIEW_LLM_TOKEN="你的Token"
+python3 skills/opencode-trace-review/scripts/run_review.py import ./my-review/trace.json --profile ./my-review/profile.json --data-dir ./review-data
+python3 skills/opencode-trace-review/scripts/run_review.py llm-review RUN_ID --profile ./my-review/profile.json --data-dir ./review-data
+python3 skills/opencode-trace-review/scripts/run_review.py report RUN_ID --data-dir ./review-data --output ./report.md
+```
+
+RUN_ID 使用 import 返回值。将模板输入、输出、参考材料与评审标准替换为真实任务。模型评审会发送材料并可能产生费用；不要把真实 Token 提交到仓库。使用网页：`python3 skills/opencode-trace-review/scripts/run_review.py serve --data-dir ./review-data`。
+
+默认使用 max_tokens；接口要求 max_completion_tokens 时添加 `--token-parameter max_completion_tokens`；不支持 JSON 模式时添加 `--no-json-mode`。API 地址支持基础地址或完整 /chat/completions 地址。
+
+完整说明：[API + Token 评审接口](skills/opencode-trace-review/references/llm-review.md)；可修改的[输入输出示例](examples/llm-review)。验证使用本地模拟 API，尚未调用真实付费模型或验证实际提供商配置。
+
+## 通用评估与任务扩展
 
 - **通用轨迹 JSON**：接入提取、调研、文档处理、浏览器和业务流程等 agent；其他框架通过明确的字段映射导出。
 - **Task Profile**：用 JSON 配置字段匹配、必填项、长度、数值阈值、工具调用约束。
@@ -60,6 +88,7 @@ Codex 中也可显式写 `$opencode-trace-review`。同一任务的两次运行�
 | --- | --- |
 | 使用另一个 agent 框架 | 将日志映射为通用 trace_version: 1 JSON |
 | 字段、数量、预算、工具约束 | 修改 Profile JSON，不需要写代码 |
+| 开放式答案的大模型评审 | API 地址 + Token + 模型名，配合 Profile 评审标准 |
 | 业务规则、事实核验、人工复核 | 声明 external 规则，实现 JSON 评估器协议 |
 | 接入已有平台 | HTTP API 或 Python 函数接口 |
 
@@ -79,7 +108,7 @@ RUN_ID 替换为导入返回的值。复杂验收依次使用 evaluator-request�
 
 pass 仅代表声明的必需验收条件全部通过。行为或成本检查通过不能单独证明任务完成；文章结构正确不证明事实正确。未知指标和缺少的 external 结果保持 unknown，必要证据不全时整体为 inconclusive。
 
-外部结果绑定当前输入和规则哈希，并必须引用真实证据路径；绑定不能认证评估器作者或证明声明正确。内置 LLM Judge 仍针对代码任务，默认关闭；通用任务通过 external 接口使用自己的专项评估器。
+外部结果绑定当前输入和规则哈希，并必须引用真实证据路径；绑定不能认证评估器作者或证明声明正确。代码轨迹可选 Scout Judge；通用任务可选 API + Token 模型评审或自定义 external 评估器。模型判断可能出错，结构和引用校验不等于事实核验。
 
 所有示例均为合成数据，不构成真实模型性能排名。评估引擎在本机处理材料；承载 skill 的 agent 服务仍按其自身数据设置处理输入和报告。不要把真实凭据、私有会话或本地评估数据库提交到仓库。
 
@@ -92,15 +121,17 @@ skills/opencode-trace-review/
 ├── scripts/run_review.py
 ├── references/
 │   ├── advanced.md
-│   └── custom-tasks.md
+│   ├── custom-tasks.md
+│   └── llm-review.md
 └── assets/
-    ├── agent_trace_review-0.2.0-py3-none-any.whl
+    ├── agent_trace_review-0.3.0-py3-none-any.whl
     ├── runtime.json
     ├── requirements.txt
     └── requirements-scout.txt
 examples/
 ├── invoice/
-└── research/
+├── research/
+└── llm-review/
 ```
 
 wheel 内包含引擎、网页与任务模板。run_review.py 校验运行包、准备环境并转交 CLI 参数，不依赖原始源码目录。版本与 SHA-256 见 runtime.json。

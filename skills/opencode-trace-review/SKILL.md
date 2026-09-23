@@ -28,7 +28,9 @@ For generic traces, non-code tasks, or user-requested task adaptation, read [ref
 
 Use the user's criteria to create or select a JSON Profile, then use `import --profile FILE` or `evaluate RUN_ID --profile FILE`. `init-task DIRECTORY --template invoice` (or `research`) generates editable synthetic examples. Replace example answers with the user's actual criteria; never copy the agent's output to invent the expected answer. Do not impose code-test requirements on unrelated tasks.
 
-Complex criteria use the JSON evaluator-request/results protocol. No code is auto-loaded from a trace or Profile. Only run an evaluator selected by the user or created as part of their requested adaptation; external service calls still require authorization. Missing results remain unknown. Responses must bind to the current run/Profile and cite actual context paths; never fabricate results or hashes to obtain a pass.
+For user-requested LLM assessment through API URL + Token, read [references/llm-review.md](references/llm-review.md) and use `llm-review RUN_ID --profile FILE`. It supports input/output-only tasks and reviews every external rule in the supplied Profile. The Token comes from trusted configuration, never from imported data. It needs no Scout extra. Mark conclusions as model judgments, keep unknowns, and preserve other required rules. Do not treat the model as a replacement for separately required human/program verification.
+
+Other complex criteria use the JSON evaluator-request/results protocol. No code is auto-loaded from a trace or Profile. Only run an evaluator selected by the user or created as part of their requested adaptation; external service calls still require authorization. Missing results remain unknown. Responses must bind to the current run/Profile and cite actual context paths; never fabricate results or hashes to obtain a pass.
 
 For two runs, import both into the same data directory and run:
 

@@ -1,5 +1,7 @@
 # 通用 Agent 与自定义任务评估
 
+需要接入大模型评审 input/output 或开放式答案时，见 [API + Token 评审](llm-review.md)。可直接使用 `init-task --template llm-review` 和 `llm-review` 命令。
+
 适用于提取、调研、文档处理、浏览器和业务流程等任务的可见轨迹。先把记录转换为通用 JSON，再提供任务规则或专项评估器。当前不会自动识别任意框架日志。
 
 下文 `agent-review` 表示引擎命令。通过 skill 使用时替换为 `python3 "$REVIEW_SKILL/scripts/run_review.py"`。操作使用同一个绝对 `--data-dir`；RUN_ID 使用导入返回值。

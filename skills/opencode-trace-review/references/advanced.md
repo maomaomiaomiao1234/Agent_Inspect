@@ -22,7 +22,7 @@ Wait for startup success and open `http://127.0.0.1:8765`. If that port is in us
 
 ## Optional Judge
 
-The built-in Judge rubric applies to OpenCode coding traces. For generic tasks use an `external` rule and the protocol in [custom-tasks.md](custom-tasks.md). Profile outcomes are preserved when adding a coding Judge review.
+The Scout Judge rubric applies to OpenCode coding traces. For generic tasks use the API + Token reviewer in [llm-review.md](llm-review.md), or implement an external evaluator using [custom-tasks.md](custom-tasks.md). Profile outcomes are preserved when adding a coding Judge review.
 
 Only run when the user requests model-based review and permits sending visible excerpts to the selected provider. Existing explicit authorization can be reused. Do not turn ordinary “analyze this trace” into consent for an external model call.
 
