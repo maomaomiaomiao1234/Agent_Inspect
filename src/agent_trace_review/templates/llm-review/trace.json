@@ -1,0 +1,15 @@
+{
+  "trace_version": "1",
+  "framework": "input-output-agent",
+  "run_id": "support-answer-demo-1",
+  "title": "客服答复 · 输入输出合成示例",
+  "demo": true,
+  "task_prompt": "用户说：物流很慢，我想退款。请根据提供的客服规则回复。",
+  "status": "completed",
+  "coverage": "partial",
+  "events": [],
+  "output": "抱歉让您久等了。请提供订单号，我会先核实订单状态，再确认是否符合退款条件。",
+  "artifacts": {
+    "reference_policy": "合成客服规则：退款处理前必须核实订单号和订单状态；未核实前不得承诺退款已完成。"
+  }
+}

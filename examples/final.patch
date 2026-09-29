@@ -1,0 +1,8 @@
+diff --git a/auth/session.py b/auth/session.py
+--- a/auth/session.py
++++ b/auth/session.py
+@@ -12,3 +12,3 @@
+ def is_valid(session, now):
+-    return now <= session.expires_at
++    return now < session.expires_at
+ 

@@ -1,0 +1,20 @@
+{
+  "id": "session-expiry",
+  "version": "1",
+  "prompt": "修复会话过期判断：刚好达到过期时间时应拒绝会话。补充边界测试并运行 pytest。",
+  "base_commit": "demo-base-7e92c1",
+  "environment_hash": "demo-python312",
+  "suite_hash": "demo-auth-v1",
+  "budget_policy": "900s-2usd",
+  "final_state_hash": "demo-final-correct",
+  "checks": [
+    {
+      "id": "auth-tests",
+      "kind": "test",
+      "command": "pytest tests/test_session.py -q"
+    }
+  ],
+  "protected_paths": [
+    "config/secrets.*"
+  ]
+}

@@ -1,3 +1,9 @@
+# 验证记录索引
+
+历史记录按各自验证日期和范围保留。最新专项验收见 [代码修复](TASK2_VALIDATION.zh-CN.md) 和 [文档转换](TASK3_VALIDATION.zh-CN.md)；当前项目状态见 [开发交接](HANDOFF.zh-CN.md)。
+
+---
+
 # 0.3.0 API + Token 大模型评审验证
 
 - 后端与启动器：145 项 pytest 测试通过，其中新增 25 项，覆盖只有输入输出的任务、模型 pass/fail/unknown、原有规则失败不可覆盖、缓存、无效/重复/遗漏结果、错误引用、401/429/重定向、超时、输出过大、截断、拒绝、CLI、HTTP、Token 不泄露及服务端 Token 不转发到替换接口。
@@ -25,3 +31,26 @@ Token 只用于请求认证；报告记录模型、API 地址、评审标准、�
 基础分析和所有验证均未调用付费模型。测试数据为合成样例，不构成真实 agent 的准确率或模型排名。自定义程序由用户单独运行；哈希绑定只能确认对应的输入/规则，不能认证外部验收结论真实性。内置 LLM Judge 仍限于代码任务，通用专项评审通过 external 协议接入。
 
 部分 uv 版本在独立目录启动时会显示无项目警告，实际命令成功；测试依赖还显示非阻断的 Starlette/httpx 弃用提示。
+
+---
+
+# OpenCode v0.1 验证记录
+
+验证日期：2026-09-13。本记录针对本地 OpenCode 版本实现，不代表真实 agent/model 的性能评测结果。
+
+| 检查 | 结果 | 范围 |
+| --- | --- | --- |
+| Python 测试 | 75 passed | 导入、幂等与并发、证据引用、归一化、复杂 shell、验收匹配、回归/缺失测试、路径约束、比较、API、Judge |
+| Ruff | 通过 | `src scripts tests` |
+| TypeScript / Vite | 构建通过 | 生产前端与生成的模型契约 |
+| Playwright / Chrome | 2 passed | 导入、报告证据、诊断定位、最终 diff、导出、双运行比较；390 px 手机布局和弹窗键盘交互 |
+| OpenCode 原生格式 | 通过，CLI 1.18.18 | 独立临时 XDG 目录中原生 import/export 往返；6 messages、10 normalized events、4 tool calls |
+| Inspect Scout 实际 bridge | 通过，0.5.2 | 离线 mock provider；单次生成、输入角色、无执行工具、输出校验、用量记录 |
+| wheel 独立工件 | 通过 | 解包到临时目录后使用该包导入 API；内含前端资源，示例可导入 |
+| 合成日志性能 | 10,000 tool calls，13,427,890 bytes | 本机导入并分析 0.706 s；从 SQLite 重新读取 0.079 s；一次测量，不是通用性能保证 |
+
+后端测试有两条来自 Starlette/AnyIO 的弃用提示，不影响通过。浏览器控制台没有观察到运行时错误。界面已检查桌面与手机截图，调整了小字和低对比度文字。
+
+代码状态与 suite hash 由提供验收材料的一方保证；本版本不执行 independent verifier，也不重新计算外部报告的真实性。原生格式检查使用合成会话，没有读取用户现有会话、访问真实模型或消耗付费 API。
+
+尚未验证的部分：其他 OpenCode 版本、真实任务集上的 detector 精确率/召回率、真实 provider 的 Judge 回答质量与费用、多任务多次运行的模型统计排名。使用方法和后续范围见 [README](README.md) 与 [实施计划](IMPLEMENTATION_PLAN.zh-CN.md)。

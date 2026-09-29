@@ -1,0 +1,6 @@
+*.pdf binary
+*.whl binary
+
+# Unified diff fixtures contain space-prefixed empty context lines.
+*.patch -whitespace
+src/agent_trace_review/demo.py whitespace=-blank-at-eol

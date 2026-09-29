@@ -1,0 +1,13 @@
+{
+  "profile_version": "1",
+  "id": "invoice-business-check",
+  "version": "1",
+  "rules": [
+    {
+      "id": "invoice_total",
+      "description": "金额与独立参考发票一致",
+      "op": "external",
+      "dimension": "outcome"
+    }
+  ]
+}

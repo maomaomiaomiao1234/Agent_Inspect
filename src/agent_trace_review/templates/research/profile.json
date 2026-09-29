@@ -1,0 +1,32 @@
+{
+  "profile_version": "1",
+  "id": "research-structure",
+  "version": "1",
+  "description": "仅检查交付结构；真实性由 external 规则的独立评估器核验。",
+  "rules": [
+    {
+      "id": "summary",
+      "op": "length_min",
+      "path": "/output/summary",
+      "value": 20
+    },
+    {
+      "id": "sources",
+      "op": "length_min",
+      "path": "/output/sources",
+      "value": 1
+    },
+    {
+      "id": "facts",
+      "op": "external",
+      "description": "来源真实性与结论准确性"
+    },
+    {
+      "id": "budget",
+      "dimension": "resource",
+      "op": "max",
+      "path": "/metrics/cost_usd",
+      "value": 0.02
+    }
+  ]
+}

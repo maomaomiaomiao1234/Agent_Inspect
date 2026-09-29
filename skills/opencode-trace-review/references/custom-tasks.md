@@ -131,3 +131,59 @@ evaluation = evaluate_profile(store, run, profile_dict, response_dict)
 ```
 
 正式比较需提供相同任务、初始输入状态、环境、验收集合和预算。可用 Task Manifest 的 initial_state_hash 表达非 Git 初始状态，checks 留空时由 Profile 验收。缺少条件仅作描述性比较。
+
+## generic/2：代码 diff 与独立验证报告
+
+最新项目源码增加 `generic/2`，机器合同位于 `schema` 的 `generic_bundle`。旧 `generic/1` 的格式与运行 ID 规则保持不变；它仍不接受 diff 或验证报告。
+
+```json
+{
+  "bundle_version": "generic/2",
+  "trace": {"trace_version": "1", "framework": "my-agent", "run_id": "repair-001", "events": [], "output": "修复产物"},
+  "task": {
+    "id": "repair", "initial_state_hash": "initial-content-hash",
+    "final_state_hash": "final-content-hash", "suite_hash": "fixed-verifier-hash",
+    "checks": [{"id": "tests", "kind": "test"}]
+  },
+  "diff": "",
+  "verifications": [{
+    "id": "final-tests", "check_id": "tests", "kind": "test", "phase": "final",
+    "provenance": "external_verifier", "result": "pass",
+    "state_hash": "final-content-hash", "suite_hash": "fixed-verifier-hash",
+    "cases": {"Example::test_boundary": "pass"}
+  }]
+}
+```
+
+上例只说明结构，hash 和报告应由执行方提供。`diff: ""` 表示已提供空补丁；`null` 或省略表示未提供。完整 cases 与计数必须一致，报告 ID 不可重复，只接受 external_verifier。导入器会重新建立本地证据 ID，不接受上传者指定的本地引用。导出 bundle 保留 diff、报告和任务材料；材料变化会改变 run ID。
+
+HTTP 附加 JUnit 必须明确上传 generic/2 envelope，且 Task 只有一个 test check，并提供 final_state_hash 与 suite_hash。裸通用 trace 和 generic/1 不会隐式升级。导入文件仍不执行命令，也不认证报告真实性。
+
+### 内置代码修复实验
+
+在**项目源码目录**运行：
+
+```sh
+uv run agent-review code-repair --candidate all --data-dir /absolute/review-data
+uv run agent-review serve --data-dir /absolute/review-data
+```
+
+需运行中的 Docker 和本地 `python:3.12-slim`。引擎不自动拉取镜像；缺少时手动执行 `docker pull python:3.12-slim`。correct=pass、incorrect=fail、regression=fail（含测试回归证据）、timeout=inconclusive。每次执行形成新运行，重新导入同一材料保持幂等。
+
+仅支持内置候选模拟，不接收任意命令或仓库。候选不是实际 Agent 输出；baseline/final 报告来自实际 Docker 测试，原始日志、退出码、耗时、代码快照、verifier 及镜像 ID 保存在 artifacts。未调用模型，Token/费用保持未知。测试集合由评测方固定；容器无网络、无宿主机挂载、非 root、只读根目录并限制 CPU/内存/PID。每阶段单独创建容器，异常与取消时清理；清理失败会给出容器名称并报错。
+
+**分发边界：仓库 `dist/` 和 skill 内置 wheel 尚未重新打包，不包含此功能。** 修改源码后使用 `uv run`；要分发新版，需另行构建、验证并刷新 wheel。当前材料哈希提供可复现关联，不是数字签名或可信执行证明。
+
+## 固定文档转换样例（Task 3）
+
+项目最新源码支持 `document-conversion --candidate correct|omitted|table_error|order_error|missing_reference|all`。使用同一 `--data-dir` 启动网页即可查看 Markdown、JSON、源 PDF 和逐项证据。候选是模拟，固定独立参考检查实际执行；未调用转换 Agent、OCR 或模型。
+
+源文档是自制两页英文数字 PDF；标注在 `fixtures/document_conversion/reference.json`。评估器从安装包读取可信参考，核对内嵌 PDF 字节哈希和导入参考快照；缺失或修改参考保持未知，不将候选提供的答案作为 ground truth。
+
+输出合同见 `schema.document_output`：`output.document` 包含 document_id、page_count、blocks；块以 id、page、kind 及 text/level/rows 表示，`output.markdown` 提供独立 Markdown。当前需要预先对齐的固定块 ID；表格为矩形，Markdown 为标题、段落和简单竖线表格。不是通用 PDF 自动对齐/转换接口。
+
+七项必需 external 检查分别核对文档身份、完整性、正文、标题、顺序、表格及 Markdown/JSON 一致性。大小写、标点与单位均保留，只规范化 Unicode NFC 和空白。OCR 与公式返回 unknown；默认非必需，改成必需会阻止通过。合并单元格、公式、OCR 和版式保真未实现，不宣称官方 TEDS/CDM。
+
+导入 bundle 不自动执行评估器。显式 `document-evaluate RUN_ID --data-dir ...` 重算固定文档检查；或 `evaluator-request` → `document-evaluator request.json --output results.json` → `evaluate --results results.json` 复用现有 external 协议。响应绑定当前输入/规则哈希，绑定不能证明第三方上传结果的真实性。标准 bundle 保存源材料，不自动携带/信任 Profile 评估历史。
+
+已验证运行包、请求和响应在 `examples/document_conversion`。普通评估不需要额外 PDF 依赖；重建与渲染 fixture 才需要 `pdf-fixtures` extra。skill 内置 wheel 仍为旧版，这些命令目前应从项目源码通过 `uv run` 使用。

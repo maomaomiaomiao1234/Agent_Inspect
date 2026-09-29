@@ -1,0 +1,53 @@
+{
+  "trace_version": "1",
+  "framework": "custom-invoice-agent",
+  "run_id": "invoice-demo-1",
+  "title": "发票提取 · 合成示例",
+  "task_prompt": "提取示例发票的号码、金额和币种。",
+  "coverage": "complete",
+  "demo": true,
+  "models": [
+    "demo/model"
+  ],
+  "start_ms": 1000,
+  "end_ms": 2500,
+  "status": "completed",
+  "events": [
+    {
+      "id": "ocr-1",
+      "kind": "tool",
+      "tool": "ocr.extract",
+      "effect": "read",
+      "status": "completed",
+      "input": {
+        "document": "invoice-demo"
+      },
+      "output": "Invoice A-100; CNY 128.50"
+    },
+    {
+      "id": "model-1",
+      "kind": "llm",
+      "status": "completed",
+      "usage": {
+        "tokens": {
+          "input": 120,
+          "output": 30,
+          "total": 150
+        },
+        "cost_usd": 0.001
+      }
+    }
+  ],
+  "output": {
+    "invoice_no": "A-100",
+    "amount": 128.5,
+    "currency": "CNY"
+  },
+  "artifacts": {
+    "reference_invoice": {
+      "invoice_no": "A-100",
+      "amount": "128.50",
+      "currency": "CNY"
+    }
+  }
+}

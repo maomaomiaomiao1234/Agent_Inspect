@@ -1,0 +1,17 @@
+{
+  "profile_version": "1",
+  "id": "document-fixture-basic",
+  "version": "1",
+  "description": "固定两页英文数字 PDF；验收正文、标题、块顺序、矩形表格、完整性及 Markdown/JSON 一致性。不是官方基准或 OCR 测试。",
+  "rules": [
+    {"id": "document_source", "description": "PDF 与独立参考匹配", "op": "external"},
+    {"id": "document_completeness", "description": "页面和内容块完整", "op": "external"},
+    {"id": "document_text", "description": "正文内容准确", "op": "external"},
+    {"id": "document_headings", "description": "标题内容与层级正确", "op": "external"},
+    {"id": "document_order", "description": "阅读顺序正确", "op": "external"},
+    {"id": "document_tables", "description": "表格结构与单元格准确", "op": "external"},
+    {"id": "document_markdown", "description": "Markdown 与 JSON 一致", "op": "external"},
+    {"id": "document_ocr", "description": "扫描文档 OCR（未覆盖）", "op": "external", "required": false},
+    {"id": "document_formulas", "description": "公式识别（未覆盖）", "op": "external", "required": false}
+  ]
+}

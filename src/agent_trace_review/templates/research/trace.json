@@ -1,0 +1,48 @@
+{
+  "trace_version": "1",
+  "framework": "research-agent",
+  "run_id": "research-demo-1",
+  "title": "调研摘要 · 合成示例",
+  "task_prompt": "根据提供的材料整理摘要并列出来源。",
+  "demo": true,
+  "coverage": "complete",
+  "events": [
+    {
+      "id": "search-1",
+      "kind": "tool",
+      "tool": "web.search",
+      "effect": "read",
+      "status": "completed",
+      "input": {
+        "query": "synthetic example"
+      },
+      "output": {
+        "sources": [
+          "example.invalid"
+        ]
+      }
+    },
+    {
+      "id": "model-1",
+      "kind": "llm",
+      "status": "completed",
+      "usage": {
+        "tokens": {
+          "input": 180,
+          "output": 80,
+          "total": 260
+        },
+        "cost_usd": 0.002
+      }
+    }
+  ],
+  "output": {
+    "summary": "这是一份用于演示结构检查的合成摘要，包含任务要求的主要内容；它没有经过独立事实核验。",
+    "sources": [
+      {
+        "url": "https://example.invalid/source",
+        "title": "合成材料"
+      }
+    ]
+  }
+}

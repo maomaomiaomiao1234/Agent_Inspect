@@ -1,0 +1,16 @@
+{
+  "document_id": "garden-water-v1",
+  "page_count": 2,
+  "blocks": [
+    {"id": "title", "page": 1, "kind": "heading", "level": 1, "text": "Field study: garden water use"},
+    {"id": "intro", "page": 1, "kind": "paragraph", "text": "A small garden compared two irrigation schedules over three days."},
+    {"id": "measurements", "page": 1, "kind": "heading", "level": 2, "text": "1. Recorded water use"},
+    {"id": "water-table", "page": 1, "kind": "table", "rows": [["Day", "Drip (L)", "Sprinkler (L)"], ["Monday", "12", "18"], ["Tuesday", "10", "17"], ["Wednesday", "11", "19"], ["Total", "33", "54"]]},
+    {"id": "totals", "page": 1, "kind": "paragraph", "text": "The drip schedule used 33 L in total. The sprinkler schedule used 54 L."},
+    {"id": "observations", "page": 2, "kind": "heading", "level": 2, "text": "2. Observations"},
+    {"id": "method", "page": 2, "kind": "paragraph", "text": "Soil moisture was checked each morning before watering."},
+    {"id": "limitation", "page": 2, "kind": "paragraph", "text": "The comparison describes this garden only; it is not a general recommendation."},
+    {"id": "follow-up", "page": 2, "kind": "heading", "level": 2, "text": "3. Follow-up"},
+    {"id": "next-step", "page": 2, "kind": "paragraph", "text": "Repeat over a full week and record rainfall."}
+  ]
+}
