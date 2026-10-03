@@ -115,6 +115,18 @@ def markdown_report(run: Run, evaluation: Evaluation) -> str:
             lines.append(
                 f"| {check['description'] or check['id']} | {'是' if check['required'] else '否'} | {check['status']} |"
             )
+    if run.framework == "http-target-v1" and isinstance(run.artifacts.get("assessment"), dict):
+        assessment = run.artifacts["assessment"]
+        lines += ["", "## 主动评测记录", "",
+                  f"评测 ID：{assessment.get('job_id', '未知')}；案例：{assessment.get('case_id', '未知')}。",
+                  f"源码提交（未认证部署绑定）：{assessment.get('commit') or '未知'}。",
+                  "对话由评审端通过 HTTP 实际收集；内部工具调用、模型 Token 和费用未由该轨迹证明。",
+                  "源码位置由题集配置或 README 声明关联，属于定位线索，不能据此确定故障原因。", ""]
+        sources = assessment.get("source_evidence", [])
+        if isinstance(sources, list):
+            for source in sources[:40]:
+                if isinstance(source, dict):
+                    lines.append(f"- {source.get('path', '未知')}:{source.get('line', '?')} · {source.get('kind', 'source')}")
     if evaluation.verifications:
         lines += [
             "",

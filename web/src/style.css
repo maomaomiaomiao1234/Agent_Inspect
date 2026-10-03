@@ -3,6 +3,49 @@
   padding: 20px;
   min-width: 0;
 }
+.assessment-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+  margin-block: 16px;
+}
+.assessment-controls label,
+.service-access label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.assessment-controls input,
+.assessment-controls select,
+.service-access input {
+  max-width: 100%;
+  padding: 8px;
+}
+.assessment-table {
+  overflow-x: auto;
+}
+.assessment-table table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+}
+.assessment-table th,
+.assessment-table td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.service-access {
+  max-width: 560px;
+  margin: 12vh auto;
+  padding: 32px;
+}
+.service-access button {
+  margin-top: 16px;
+}
 .assessment-guide p,
 .assessment-guide li {
   color: var(--muted);

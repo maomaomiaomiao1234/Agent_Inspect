@@ -1,6 +1,6 @@
 # 验证记录索引
 
-历史记录按各自验证日期和范围保留。最新专项验收见 [代码修复](TASK2_VALIDATION.zh-CN.md) 和 [文档转换](TASK3_VALIDATION.zh-CN.md)；当前项目状态见 [开发交接](HANDOFF.zh-CN.md)。
+历史记录按各自验证日期和范围保留。最新专项验收见 [主动 Agent 评测与服务部署（2026-10-03）](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)，此前专项见 [代码修复](TASK2_VALIDATION.zh-CN.md) 和 [文档转换](TASK3_VALIDATION.zh-CN.md)；当前项目状态见 [开发交接](HANDOFF.zh-CN.md)。
 
 ---
 

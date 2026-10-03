@@ -1,5 +1,7 @@
 import json
 import os
+import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
@@ -11,6 +13,21 @@ from pydantic import BaseModel, SecretStr, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .analysis import analyze, compare
+from .assessment_contracts import (
+    AssessmentInput,
+    AssessmentSuite,
+    TargetDefinition,
+    TargetRequest,
+    TargetResponse,
+)
+from .assessments import (
+    AssessmentManager,
+    assessment_bundle,
+    assessment_markdown,
+    compare_assessments,
+    load_targets,
+    public_target,
+)
 from .contracts import EvaluatorResponse, GenericBundle, GenericTrace, TaskProfile
 from .demo import DemoScenario, scenario_bundles
 from .document_conversion import DocumentCandidate, evaluate_document_run, run_document_candidate
@@ -22,6 +39,7 @@ from .models import Evaluation, Run, Task
 from .opencode import MAX_IMPORT
 from .profiles import evaluate_profile, evaluator_request
 from .reports import junit_report, markdown_report
+from .repositories import compare_repositories, inspect_repository
 from .service import ingest
 from .storage import Store
 from .util import canonical
@@ -63,14 +81,47 @@ def read_upload(file: UploadFile, limit: int) -> bytes:
     return content
 
 
-def create_app(data_dir: str | None = None, static_dir: str | None = None) -> FastAPI:
+def create_app(
+    data_dir: str | None = None, static_dir: str | None = None, targets_file: str | None = None,
+) -> FastAPI:
     store = Store(data_dir or os.environ.get("AGENT_REVIEW_DATA", ".agent-review"))
-    app = FastAPI(title="Agent Trace Review", version="0.3.0")
+    registry_path = targets_file or os.environ.get("AGENT_REVIEW_TARGETS")
+    manager = AssessmentManager(store, load_targets(Path(registry_path) if registry_path else None))
+    service_token = os.environ.get("AGENT_REVIEW_SERVICE_TOKEN", "")
+
+    @asynccontextmanager
+    async def lifespan(app):
+        try:
+            yield
+        finally:
+            manager.close()
+
+    app = FastAPI(title="Agent Trace Review", version="0.3.0", lifespan=lifespan)
     app.state.store = store
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
+    app.state.assessments = manager
+    hosts = ["localhost", "127.0.0.1", "[::1]", "testserver"]
+    hosts += [v.strip() for v in os.environ.get("AGENT_REVIEW_ALLOWED_HOSTS", "").split(",") if v.strip()]
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
 
     @app.middleware("http")
     async def local_writes(request: Request, call_next):
+        if not service_token and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+            if request.client and request.client.host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+                return Response("远程 API 访问需要管理员设置 AGENT_REVIEW_SERVICE_TOKEN。", status_code=403)
+        if service_token and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+            supplied = request.headers.get("authorization", "")
+            if not secrets.compare_digest(supplied.encode(), ("Bearer " + service_token).encode()):
+                return Response("需要服务访问令牌（Authorization: Bearer ...）。", status_code=401)
+        # New active-assessment bodies are bounded before Pydantic parses nested suites.
+        if request.url.path.startswith("/api/assessments") and request.method == "POST":
+            size = 0
+            chunks = []
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > 1024 * 1024:
+                    return Response("评测请求超过 1 MB。", status_code=413)
+                chunks.append(chunk)
+            request._body = b"".join(chunks)
         if (
             request.method in {"POST", "PUT", "DELETE", "PATCH"}
             and request.headers.get("x-review-request") != "1"
@@ -99,8 +150,70 @@ def create_app(data_dir: str | None = None, static_dir: str | None = None) -> Fa
             "status": "ok",
             "version": "0.3.0",
             "adapter": "OpenCode / generic trace v1",
-            "data_dir": str(store.root),
+            "data_dir": "[server-managed]" if service_token else str(store.root),
+            "authentication_required": bool(service_token),
+            "active_assessment": True,
         }
+
+    @app.get("/api/targets")
+    def targets():
+        return [public_target(t) for t in manager.targets.values()]
+
+    @app.post("/api/targets/{target_id}/repository-profile")
+    def repository_profile(target_id: str):
+        target = manager.targets.get(target_id)
+        if target is None or not target.repository:
+            raise HTTPException(422, "目标未登记仓库。")
+        try:
+            return manager.db.save_repository(inspect_repository(Path(target.repository), target.ref, target.repository_url))
+        except (ValueError, OSError):
+            raise HTTPException(422, "无法扫描已登记的仓库版本；请管理员检查路径、ref 和大小限制。") from None
+
+    @app.get("/api/repository-profiles/{repository_id}")
+    def stored_repository_profile(repository_id: str):
+        return manager.db.repository(repository_id)
+
+    @app.post("/api/repository-comparisons")
+    def repository_comparison(body: ComparisonInput):
+        return compare_repositories(manager.db.repository(body.left_id), manager.db.repository(body.right_id))
+
+    @app.post("/api/assessments", status_code=202)
+    def start_assessment(body: AssessmentInput):
+        try:
+            return manager.submit(body.target_id, body.suite)
+        except (ValueError, OSError):
+            raise HTTPException(422, "无法启动评测；检查目标登记、源码引用、仓库版本和队列容量。") from None
+
+    @app.get("/api/assessments")
+    def assessments(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
+        return manager.db.list_jobs(limit, offset, summary=True)
+
+    @app.get("/api/assessments/{job_id}")
+    def assessment(job_id: str):
+        return manager.db.job(job_id)
+
+    @app.post("/api/assessments/{job_id}/cancel")
+    def cancel_assessment(job_id: str):
+        return manager.db.cancel(job_id)
+
+    @app.post("/api/assessment-comparisons")
+    def assessment_comparison(body: ComparisonInput):
+        return compare_assessments(manager.db.job(body.left_id), manager.db.job(body.right_id))
+
+    @app.get("/api/assessments/{job_id}/export")
+    def assessment_export(job_id: str, format: str = "markdown"):
+        job = manager.db.job(job_id)
+        if format == "markdown":
+            content, ext = assessment_markdown(job), "md"
+        elif format == "json":
+            content, ext = canonical(job), "json"
+        elif format == "bundle":
+            content = canonical(assessment_bundle(manager.db, job))
+            ext = "bundle.json"
+        else:
+            raise HTTPException(422, "format must be markdown, json or bundle")
+        return Response(content, media_type="application/octet-stream",
+                        headers={"Content-Disposition": f'attachment; filename="{job_id}.{ext}"'})
 
     @app.get("/api/runs")
     def list_runs():
@@ -349,6 +462,10 @@ def create_app(data_dir: str | None = None, static_dir: str | None = None) -> Fa
             "document_output": DocumentOutput.model_json_schema(),
             "task_profile": TaskProfile.model_json_schema(),
             "evaluator_response": EvaluatorResponse.model_json_schema(),
+            "assessment_suite": AssessmentSuite.model_json_schema(),
+            "target_definition": TargetDefinition.model_json_schema(),
+            "target_request": TargetRequest.model_json_schema(),
+            "target_response": TargetResponse.model_json_schema(),
         }
 
     web = Path(static_dir) if static_dir else Path(__file__).parent / "static"

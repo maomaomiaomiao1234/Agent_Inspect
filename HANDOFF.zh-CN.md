@@ -1,15 +1,16 @@
 # Agent_Inspect 开发交接
 
-更新日期：2026-09-29（Task 3 样例评估完成后更新）。本文替代迁移时的半成品断点；不要按旧断点重复实现。
+更新日期：2026-10-03（Task 4 主动评测与服务部署完成后更新）。历史专项记录保留各自当时的验证范围，当前状态以本节及 Task 4 为准。
 
 ## 0. 当前状态
 
 - **Task 1 已完成：** OpenCode 轨迹的三个合成场景、CLI/API、网页、报告及验证。
 - **Task 2 已完成：** generic/2 证据包、固定模拟候选、实际 Docker 独立验证、CLI、网页、报告、单元测试和真实容器验收。
 - **Task 3 样例阶段已完成：** 自制数字 PDF、固定独立标注、五种模拟候选及实际本地专项评估；真实转换 Agent、OCR 和官方基准尚未接入。
-- 本目录仍**不是 Git 仓库，没有 `.git`**；没有 commit 或远端分支可恢复，迁移须保留当前文件。
-- 最新后端测试 **225 passed / 2 warnings**；Ruff 和前端构建通过；Chrome Playwright **6 passed / 1 skipped**。
-- 网页静态资源已重建。根目录 `dist/` 和 skill 内置 wheel **仍是旧分发包，未重新打包**。
+- **Task 4 第一版已完成：** 固定仓库能力档案、真实 HTTP 主动评测、多轮/记忆/隔离、声明与源码关联、预算曲线、版本回归、访问令牌及实际容器服务验收。
+- 本目录仍**没有 `.git`**，磁盘源码是当前工作副本。GitHub 仓库已配置并发布此前实现：`git@github.com:maomaomiaomiao1234/Agent_Inspect.git`；提交操作使用独立临时克隆，迁移可克隆远端或保留当前文件。
+- 最新后端测试 **266 passed / 2 warnings**；Ruff 和前端构建通过；Chrome Playwright **7 passed / 1 skipped**，另一次认证主动评测 **1 passed**。
+- 网页、0.3.0 wheel 和 skill 内置引擎均已重建并验证。包版本未变，启动器以内容哈希区分不同构建，主动评测记录另有执行器源码哈希。
 - 未修改原有 `.agent-review/`。实现和验证使用独立临时数据目录。
 
 ## 1. 用户目标与已确定选择
@@ -19,6 +20,7 @@
 1. OpenCode 数据评估：从导出轨迹分析工具使用、错误恢复、证据和资源。
 2. 代码修复能力评估：候选代码接受可信、固定的独立测试。
 3. 文档转换能力评估：优先 PDF/扫描文档 → Markdown/JSON，暂不做 Office → PDF 排版保真。
+4. 面向比赛部署的评审 Agent：已知对方开源仓库时，收集源码声明与证据，通过实际任务测量目标服务，并导出可核查报告。
 
 用户选择先用示例跑通，再接真实 Agent。尚未提供真实被测 Agent 仓库或真实 OpenCode 导出数据。本轮没有运行真实第三方 Agent、调用付费 API 或下载完整基准数据集。
 
@@ -85,7 +87,7 @@ candidate 为 correct（默认）、incorrect、regression、timeout、all。结
 
 generic 的最终结果页依据 diff_provided 同时展示 output 与 diff；显式空 diff 显示“与基线相同”。验证页可以查看两个阶段的报告和执行记录。报告含阶段结果及最终补丁。示例说明区分候选与验证材料来源。
 
-README、网页接入指南、`skills/opencode-trace-review/references/custom-tasks.md` 已更新。skill 参考文档描述最新源码，但内置 wheel 尚未刷新。
+README、网页接入指南、`skills/opencode-trace-review/references/custom-tasks.md` 已更新。此阶段未刷新内置 wheel，后续 Task 4 已统一重建。
 
 ### 验证与材料
 
@@ -140,9 +142,48 @@ Task 3 临时网页测试服务（18765）已停止；原有 .agent-review 未�
 2. 如先接文档转换器基线，可选择明确的本地转换器和固定版本，实际运行同一 PDF，再将其输出适配为已声明的块/Markdown 格式；转换器输出不能作为标准答案。
 3. 扩展真实 PDF、扫描 OCR、中文、公式等任务时先建立独立标注和明确的专项规则；当前无能力覆盖的维度继续 unknown。
 4. 后续接 OmniDocBench/Harbor/SWE-bench 前核对版本、许可证、数据协议和运行范围，不能把当前简化检查叫作官方成绩。
-5. 如需要可分发安装包，另行构建并检查 wheel、更新 skill 内置包；本轮尚未执行。
+5. 此阶段尚未刷新可分发安装包；后续 Task 4 已构建并检查 wheel、更新 skill 内置包。
 
 尚未提供真实 Agent。不要把“样例评估完成”描述成“任意文档转换或真实 Agent 能力已经验证”。
+
+## 5A. Task 4：主动评测与服务部署
+
+详情见 [主动评测指南](docs/ACTIVE_ASSESSMENT.zh-CN.md) 和 [专项验收](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)。
+
+### 实现入口
+
+- `repositories.py`：只读固定 Git commit 或目录内容快照，限制文件/字节/耗时，忽略密钥目录和符号链接，保存源码行号、哈希和未验证声明；不执行仓库脚本或指令。
+- `assessment_contracts.py`：管理员目标表、Suite、预算、轮次、claim/source 关联、HTTP target-v1 协议。
+- `target_client.py`：实际 HTTP 调用、总期限、响应上限、不跟随重定向或重试；可选固定镜像启动、健康检查和最终清理。
+- `assessment_store.py`、`assessments.py`：SQLite 队列、逐案例保存、取消、重启 interrupted、固定 Profile 验收、资源曲线、声明验证、版本比较和报告/证据包。
+- `api.py`、`cli.py`：主动评测及仓库接口；`AGENT_REVIEW_SERVICE_TOKEN` 保护 API、报告和工件，非回环监听必须配置令牌。
+- `web/src/assessments.tsx`、`api-client.tsx`：选择目标、上传题集、扫描源码、进度/详情/比较/下载；令牌仅在页面内存中保存。
+- 根 Dockerfile、`deploy/compose.yaml`：单进程评审服务及独立控制 Agent；默认通过已有 HTTP 服务发题，无需 Docker socket。
+
+### 第一轮使用
+
+```sh
+uv run python examples/assessment/mock_agent.py --port 9081
+# 另一终端
+uv run agent-review serve --data-dir ./review-data \
+  --targets examples/assessment/targets.json --port 8765
+```
+
+打开 `http://127.0.0.1:8765/#/assessments`，选择 control 并上传 `examples/assessment/suite.json`。管理员登记真实目标的 endpoint、协议路径、凭据环境变量名称和固定仓库版本；客户端不能提交任意目标地址或部署命令。
+
+服务使用单进程内的两个 worker，排队与执行总数最多 32；不要配置多个 Uvicorn worker 或并发服务共用 data-dir。题集冻结，标准答案留在评审端；HTTP 只观察外部对话，内部轨迹覆盖保持 partial。预算缺少用量时保持 unknown，不能强制供应商账单。取消保留部分结果，重启不会自动重放任务。
+
+### 实际验收
+
+五种实际 HTTP 控制程序结果：correct 16 pass；incorrect/noop 各 16 fail；missing 16 inconclusive；leaky 12 pass / 4 fail（隔离）。真实 Docker 目标 16 pass；评审服务和控制目标分开的容器部署 16 pass，认证、只读 Git 扫描、报告/工件下载和重启持久化通过。
+
+证据归档在 `examples/assessment/verified/`，包含六类运行 bundle、完整服务部署记录与哈希摘要。只读这些文件不重跑 Agent。目前仅支持导入其中的 generic 运行包，未实现整个主动评测 bundle 的导入入口。
+
+本机平台 linux/arm64；评审镜像 ID `sha256:de095cd30858b7177f2113cd0e9d90f4ef8f491da61d767b5fef250256064b14`，目标镜像 ID `sha256:17e8beaddd7e1ea49d1e612a20be059cf4eea9c7bd9408db957c6aa91f1778b8`。测试创建的容器、网络、数据卷及临时网页服务已清理。原 `.agent-review` 未改动。
+
+### 接续范围
+
+第一版服务已具备完整受控评测闭环。下一阶段根据真实比赛协议接入参赛 Agent：目前尚无真实目标、完整 A2A、源码自动构建与可信镜像绑定、官方基准评分、通用工具故障注入、分布式队列或统计置信区间。源码关联不是因果证明，控制样例不是比赛成绩。
 
 ## 6. 环境与复现
 
@@ -176,18 +217,20 @@ REVIEW_TEST_URL=http://127.0.0.1:18765 REVIEW_CODE_REPAIR_FIXTURES=1 npm --prefi
 
 必须保留当前 src、tests、scripts、examples、web/src、web/tests、配置/锁文件、skills 和文档。不要重新下载旧版本覆盖。
 
-`.venv`、node_modules、缓存、web/dist、static 可以在新机重建。`dist/` 和 skill 内置 wheel 是旧版；分发新功能需另行构建 wheel、运行包检查、刷新 skill。原 `.agent-review` 可选迁移，须关闭服务后把数据库与 artifacts 完整备份；不要只复制 SQLite。
+`.venv`、node_modules、缓存、web/dist、static 可以在新机重建。`dist/` 与 skill 内置 wheel 已刷新；后续改代码时重新执行 build_web、uv build、check_package、package_skill。原 `.agent-review` 可选迁移，须关闭服务后把数据库与 artifacts 完整备份；不要只复制 SQLite。
 
-不要迁移本机凭据、Token、`.env*` 或 CLI 登录状态到公开归档。项目源码并未接入新远端或自动推送。
+不要迁移本机凭据、Token、`.env*` 或 CLI 登录状态到公开归档。用户已授权提交到 GitHub 的 Agent_Inspect 仓库，原始本地目录没有 `.git`，提交可使用独立克隆。
 
 ## 8. 下一会话接续指令
 
 ```text
-阅读 HANDOFF.zh-CN.md、TASK2_VALIDATION.zh-CN.md、TASK3_VALIDATION.zh-CN.md。
-Task 1/2/3 的受控示例链已完成；当前没有 Git 仓库，以磁盘源码为准。
-下一阶段接入真实运行或明确的转换器基线；真实 Agent 尚未提供。
+阅读 HANDOFF.zh-CN.md、docs/ACTIVE_ASSESSMENT.zh-CN.md 和 ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md。
+Task 1/2/3 受控示例及 Task 4 第一版主动评测服务已完成。
+当前目录没有 .git；GitHub 已发布此前实现，提交使用独立克隆，以本地当前源码核对远端状态。
+下一阶段按比赛要求适配真实 Agent、独立题集或构建来源；真实 Agent 尚未提供。
 复用现有 trace/Profile/external 协议；区分模拟候选、实际验证和未覆盖维度。
 当前文档评估器只支持固定两页数字 PDF 和约定块 ID；不支持任意 PDF 自动对齐、OCR 或公式。
 不把转换器输出当作 ground truth，不把简化指标称为官方 TEDS/CDM。
-测试使用独立 data-dir，避免修改原 .agent-review。旧分发 wheel 尚未刷新。
+主动评测使用管理员目标表、固定题集和单进程服务，不认证源码到镜像来源或强制供应商费用。
+测试使用独立 data-dir，避免修改原 .agent-review。wheel 与 skill 已重建，修改后须再次刷新。
 ```

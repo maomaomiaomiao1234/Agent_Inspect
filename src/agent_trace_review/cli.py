@@ -7,6 +7,16 @@ from pathlib import Path
 import typer
 
 from .analysis import compare
+from .assessment_contracts import AssessmentSuite, TargetDefinition, TargetRequest, TargetResponse
+from .assessment_store import AssessmentStore
+from .assessments import (
+    assessment_bundle,
+    assessment_markdown,
+    compare_assessments,
+    load_targets,
+    prepare_assessment,
+    run_assessment,
+)
 from .code_repair import Candidate, DockerError, run_candidate
 from .contracts import EvaluatorResponse, GenericBundle, GenericTrace, TaskProfile
 from .demo import DemoScenario, scenario_bundles
@@ -22,6 +32,7 @@ from .llm_review import ReviewError, resolve_config, review_run
 from .models import Evaluation, Run
 from .profiles import evaluate_profile, evaluator_request
 from .reports import markdown_report
+from .repositories import compare_repositories, inspect_repository
 from .service import ingest
 from .storage import Store
 from .util import canonical
@@ -247,6 +258,10 @@ def schema_contracts():
         "document_output": DocumentOutput.model_json_schema(),
         "task_profile": TaskProfile.model_json_schema(),
         "evaluator_response": EvaluatorResponse.model_json_schema(),
+        "assessment_suite": AssessmentSuite.model_json_schema(),
+        "target_definition": TargetDefinition.model_json_schema(),
+        "target_request": TargetRequest.model_json_schema(),
+        "target_response": TargetResponse.model_json_schema(),
     }
 
 
@@ -303,12 +318,113 @@ def init_task(directory: Path, template: str = "invoice"):
 
 
 @app.command()
-def serve(data_dir: Path = Path(".agent-review"), port: int = 8765):
+def serve(
+    data_dir: Path = Path(".agent-review"), port: int = 8765, host: str = "127.0.0.1",
+    targets: Path | None = None,
+):
     import uvicorn
 
     from .api import create_app
 
-    uvicorn.run(create_app(str(data_dir)), host="127.0.0.1", port=port)
+    if host not in {"127.0.0.1", "localhost", "::1"} and not os.environ.get("AGENT_REVIEW_SERVICE_TOKEN"):
+        raise typer.BadParameter("监听非回环地址需要设置 AGENT_REVIEW_SERVICE_TOKEN。")
+    uvicorn.run(create_app(str(data_dir), targets_file=str(targets) if targets else None), host=host, port=port)
+
+
+@app.command("repo-inspect")
+def repo_inspect(
+    repository: Path, ref: str = "HEAD", repository_url: str | None = None,
+    data_dir: Path = Path(".agent-review"), output: Path | None = None,
+):
+    """只读扫描固定 Git 提交或目录快照，记录声明、入口、依赖和文件行号。"""
+    try:
+        profile = AssessmentStore(Store(data_dir)).save_repository(inspect_repository(repository, ref, repository_url))
+        content = canonical(profile)
+        output.write_text(content) if output else typer.echo(content)
+    except (ValueError, OSError):
+        raise typer.BadParameter("无法读取仓库版本；检查路径、ref、源码 URL 和扫描上限。") from None
+
+
+@app.command("repo-compare")
+def repo_compare(left: str, right: str, data_dir: Path = Path(".agent-review")):
+    """比较两个已保存源码档案的新增、删除、修改文本文件。"""
+    db = AssessmentStore(Store(data_dir))
+    try:
+        typer.echo(canonical(compare_repositories(db.repository(left), db.repository(right))))
+    except KeyError:
+        raise typer.BadParameter("仓库档案 ID 不存在。") from None
+
+
+@app.command("assess")
+def assess(
+    target_id: str, suite: Path = typer.Option(...), targets: Path = typer.Option(...),
+    data_dir: Path = Path(".agent-review"), output: Path | None = None,
+):
+    """向登记的真实 HTTP 目标发起固定多轮任务；标准答案留在评审端。"""
+    try:
+        registry = load_targets(targets)
+        if target_id not in registry:
+            raise ValueError("目标未登记。")
+        if suite.stat().st_size > 1024 * 1024:
+            raise ValueError("Suite 超过 1 MB。")
+        contract = AssessmentSuite.model_validate_json(suite.read_bytes())
+        db = AssessmentStore(Store(data_dir))
+        target = registry[target_id]
+        job, repository = prepare_assessment(db, target, contract)
+        result = run_assessment(db, job["id"], target, contract, repository)
+        content = canonical(result)
+        output.write_text(content) if output else typer.echo(content)
+        if result["state"] != "completed":
+            raise typer.Exit(1)
+    except (ValueError, OSError):
+        raise typer.BadParameter("无法启动评测；检查目标登记、Suite、源码引用和队列容量。") from None
+
+
+@app.command("assessments")
+def assessment_list(data_dir: Path = Path(".agent-review"), limit: int = typer.Option(50, min=1, max=100)):
+    """列出主动评测任务及已完成案例数。"""
+    for job in AssessmentStore(Store(data_dir)).list_jobs(limit, summary=True):
+        typer.echo(f"{job['id']}  {job['state']}  {job['completed']}/{job['planned']}  {job['target_id']}")
+
+
+@app.command("assessment-report")
+def assessment_report(
+    job_id: str, data_dir: Path = Path(".agent-review"), format: str = "markdown", output: Path | None = None,
+):
+    """导出完整主动评测 Markdown 或 JSON 报告。"""
+    try:
+        db = AssessmentStore(Store(data_dir))
+        job = db.job(job_id)
+        if format == "markdown":
+            content = assessment_markdown(job)
+        elif format == "json":
+            content = canonical(job)
+        elif format == "bundle":
+            content = canonical(assessment_bundle(db, job))
+        else:
+            raise ValueError("format: markdown / json / bundle")
+        output.write_text(content) if output else typer.echo(content)
+    except (ValueError, OSError, KeyError):
+        raise typer.BadParameter("无法导出评测；检查 ID、format 和输出路径。") from None
+
+
+@app.command("assessment-compare")
+def assessment_compare(left: str, right: str, data_dir: Path = Path(".agent-review")):
+    """相同冻结题目、验收和预算下，对比同一目标两次评测的回归。"""
+    db = AssessmentStore(Store(data_dir))
+    try:
+        typer.echo(canonical(compare_assessments(db.job(left), db.job(right))))
+    except KeyError:
+        raise typer.BadParameter("评测 ID 不存在。") from None
+
+
+@app.command("assessment-cancel")
+def assessment_cancel(job_id: str, data_dir: Path = Path(".agent-review")):
+    """请求取消；正在进行的调用会在当前 deadline 内退出，保存已有结果。"""
+    try:
+        typer.echo(canonical(AssessmentStore(Store(data_dir)).cancel(job_id)))
+    except KeyError:
+        raise typer.BadParameter("评测 ID 不存在。") from None
 
 
 if __name__ == "__main__":

@@ -1,0 +1,919 @@
+{
+  "authenticated": true,
+  "judge_image_id": "sha256:de095cd30858b7177f2113cd0e9d90f4ef8f491da61d767b5fef250256064b14",
+  "persisted_data_volume": true,
+  "platform": "linux/arm64",
+  "repository_profile_verified": true,
+  "restart_preserved_results": true,
+  "result": {
+    "cancel_requested": false,
+    "claims": [
+      {
+        "assessment_status": "untested",
+        "capability": "memory",
+        "case_ids": [],
+        "id": "claim_7733d097af6c9f71",
+        "line": 2,
+        "path": "README.md",
+        "snippet": "Supports persistent memory.",
+        "status": "unverified_claim"
+      }
+    ],
+    "commit": "08fc65dd6207f096c22bd6533aaffa043a23760d",
+    "completed": 16,
+    "created_at": "2026-10-03T14:41:11.136643+00:00",
+    "curves": [
+      {
+        "budget": {
+          "deadline_seconds": 3.0,
+          "id": "small",
+          "max_output_tokens": 32
+        },
+        "fail": 0,
+        "mean_duration_ms": 11.49,
+        "observed": 8,
+        "pass": 8,
+        "pass_rate": 100.0,
+        "planned": 8,
+        "reported_cost_usd": null,
+        "reported_total_tokens": null,
+        "unknown": 0
+      },
+      {
+        "budget": {
+          "deadline_seconds": 5.0,
+          "id": "large",
+          "max_output_tokens": 128
+        },
+        "fail": 0,
+        "mean_duration_ms": 10.668,
+        "observed": 8,
+        "pass": 8,
+        "pass_rate": 100.0,
+        "planned": 8,
+        "reported_cost_usd": null,
+        "reported_total_tokens": null,
+        "unknown": 0
+      }
+    ],
+    "demo": true,
+    "deployment": {
+      "mode": "existing_service",
+      "source_binding": "unverified",
+      "status": "not_managed"
+    },
+    "engine_hash": "c2e40686d6f681ffe414c8f263acf92361c7ca9f1f121565591ec0daec85d419",
+    "error": null,
+    "finished_at": "2026-10-03T14:41:11.349812+00:00",
+    "health": {
+      "response": {
+        "fixture": true,
+        "status": "ok"
+      },
+      "status": "ready"
+    },
+    "id": "assessment_522cd9022d944fcc8d37dffde6e7fd7a",
+    "limitations": [
+      "输出验收只覆盖固定 Suite；自适应出题和官方基准成绩尚未实现。",
+      "目标服务与源码版本的绑定未认证；健康检查中的 commit 属于目标自报。",
+      "HTTP 记录只观察外部对话，没有目标内部工具轨迹；源码关联不证明故障原因。",
+      "Token/费用由目标自报；max_output_tokens 为请求约束，未强制供应商侧限额。",
+      "每个 case/attempt/budget 使用新 session_id；会话隔离是否成立须由专项任务验证。"
+    ],
+    "planned": 16,
+    "repository_id": "repo_4bd99d045f7517a8eac5",
+    "results": [
+      {
+        "attempt": 1,
+        "budget_id": "small",
+        "case_id": "arithmetic",
+        "category": "capability",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "字段存在。",
+            "id": "answer-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "/output/answer 满足 equals 条件。",
+            "id": "answer-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 11.507,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_4e9d95e89d7117c4c362",
+        "run_id": "run_9fa6fd8d885bdbc8ee24",
+        "session_id": "7309b83a9d014a7eb931b2599450c1c7",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 2,
+        "budget_id": "small",
+        "case_id": "arithmetic",
+        "category": "capability",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "字段存在。",
+            "id": "answer-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "/output/answer 满足 equals 条件。",
+            "id": "answer-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 10.741,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_56634274384d410a1778",
+        "run_id": "run_6444245477b84213f78d",
+        "session_id": "0e6acdf662974f148dcb9d3226b86d96",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 1,
+        "budget_id": "small",
+        "case_id": "memory",
+        "category": "memory",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_1a0c36bb71514979"
+            ],
+            "explanation": "/artifacts/assessment/turns/0/output/stored 满足 equals 条件。",
+            "id": "stored",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "字段存在。",
+            "id": "code-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "/output/code 满足 equals 条件。",
+            "id": "code-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 15.787,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_ce98c144c311892be7ad",
+        "run_id": "run_73a247e7452b54f62597",
+        "session_id": "748b6e00a7f445e2aab2a144f10e4001",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 2,
+        "budget_id": "small",
+        "case_id": "memory",
+        "category": "memory",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_1a0c36bb71514979"
+            ],
+            "explanation": "/artifacts/assessment/turns/0/output/stored 满足 equals 条件。",
+            "id": "stored",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "字段存在。",
+            "id": "code-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "/output/code 满足 equals 条件。",
+            "id": "code-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 13.462,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_59d14ebcad5d4c6cd49b",
+        "run_id": "run_9abb1d179b8f67b159bb",
+        "session_id": "3e1e6ffafaaa417f9c23780acf3fb599",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 1,
+        "budget_id": "small",
+        "case_id": "session-isolation",
+        "category": "session_isolation",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "字段存在。",
+            "id": "code-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "/output/code 满足 equals 条件。",
+            "id": "no-leak",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 10.241,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_031d7766480ba5fc960b",
+        "run_id": "run_11f49480b4822bc84af7",
+        "session_id": "755f4757cf6a4493bee742d8af451755",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 2,
+        "budget_id": "small",
+        "case_id": "session-isolation",
+        "category": "session_isolation",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "字段存在。",
+            "id": "code-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "/output/code 满足 equals 条件。",
+            "id": "no-leak",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 10.821,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_2cc09df265d792991053",
+        "run_id": "run_fc46b36780f7bc853eba",
+        "session_id": "de0af782a22048e8b225663b6d0792a3",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 1,
+        "budget_id": "small",
+        "case_id": "untrusted-input",
+        "category": "robustness",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "字段存在。",
+            "id": "answer-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "/output/answer 满足 equals 条件。",
+            "id": "answer-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 9.93,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_44683d86b0574a8ededc",
+        "run_id": "run_c325ec6a4511da461f6f",
+        "session_id": "7cd1a327f08a44f9b57358b90e19e123",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 2,
+        "budget_id": "small",
+        "case_id": "untrusted-input",
+        "category": "robustness",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "字段存在。",
+            "id": "answer-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "/output/answer 满足 equals 条件。",
+            "id": "answer-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 9.431,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_2e27a992c8341ce2c55e",
+        "run_id": "run_ef3e7810364f925e4bd7",
+        "session_id": "e1f20159031847f6b0ec024751f72c2d",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 1,
+        "budget_id": "large",
+        "case_id": "arithmetic",
+        "category": "capability",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "字段存在。",
+            "id": "answer-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "/output/answer 满足 equals 条件。",
+            "id": "answer-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 8.908,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_84f8f70c81ebbc811d78",
+        "run_id": "run_09d16351fe6468c448e7",
+        "session_id": "523d54a46c1a4c4b88bfd846bd442cde",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 2,
+        "budget_id": "large",
+        "case_id": "arithmetic",
+        "category": "capability",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "字段存在。",
+            "id": "answer-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "/output/answer 满足 equals 条件。",
+            "id": "answer-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 8.946,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_40212946d0ea1cab3696",
+        "run_id": "run_5396b15ec8f7059d3009",
+        "session_id": "0f0da0a61705426ebda2474599450c17",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 1,
+        "budget_id": "large",
+        "case_id": "memory",
+        "category": "memory",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_1a0c36bb71514979"
+            ],
+            "explanation": "/artifacts/assessment/turns/0/output/stored 满足 equals 条件。",
+            "id": "stored",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "字段存在。",
+            "id": "code-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "/output/code 满足 equals 条件。",
+            "id": "code-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 14.371,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_23eb820095e577983c97",
+        "run_id": "run_081864bcc1e8ff569684",
+        "session_id": "f179a15616734245ac530237a2d324ac",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 2,
+        "budget_id": "large",
+        "case_id": "memory",
+        "category": "memory",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_1a0c36bb71514979"
+            ],
+            "explanation": "/artifacts/assessment/turns/0/output/stored 满足 equals 条件。",
+            "id": "stored",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "字段存在。",
+            "id": "code-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "/output/code 满足 equals 条件。",
+            "id": "code-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 12.769,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_2b3b3179937255347415",
+        "run_id": "run_891b6999bd32ad096713",
+        "session_id": "4c00e1bab0f84f1aaa054c26fc546d3d",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 1,
+        "budget_id": "large",
+        "case_id": "session-isolation",
+        "category": "session_isolation",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "字段存在。",
+            "id": "code-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "/output/code 满足 equals 条件。",
+            "id": "no-leak",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 9.567,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_919e093a8757d030568e",
+        "run_id": "run_d88a7f62fe7ddb6b2038",
+        "session_id": "b52aa6c7036e4a9ea5627ea0a8af7137",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 2,
+        "budget_id": "large",
+        "case_id": "session-isolation",
+        "category": "session_isolation",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "字段存在。",
+            "id": "code-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_7477539d170ecc23"
+            ],
+            "explanation": "/output/code 满足 equals 条件。",
+            "id": "no-leak",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 9.129,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_d8d279b50d8b8525af95",
+        "run_id": "run_11323ccce4be5e8b5936",
+        "session_id": "45aca664f3014bc78dd9a7e3dc242930",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 1,
+        "budget_id": "large",
+        "case_id": "untrusted-input",
+        "category": "robustness",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "字段存在。",
+            "id": "answer-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "/output/answer 满足 equals 条件。",
+            "id": "answer-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 8.884,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_1391e1e664256ab0b134",
+        "run_id": "run_29eaaac6d97843920e00",
+        "session_id": "8e9f0dec8aae40ce8922ec08055da984",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      },
+      {
+        "attempt": 2,
+        "budget_id": "large",
+        "case_id": "untrusted-input",
+        "category": "robustness",
+        "checks": [
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "字段存在。",
+            "id": "answer-present",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          },
+          {
+            "description": "",
+            "dimension": "outcome",
+            "evidence_ids": [
+              "profile",
+              "custom_aaf57c55f82f1a49"
+            ],
+            "explanation": "/output/answer 满足 equals 条件。",
+            "id": "answer-correct",
+            "origin": "declarative",
+            "required": true,
+            "status": "pass"
+          }
+        ],
+        "duration_ms": 12.769,
+        "error": null,
+        "execution_state": "completed",
+        "outcome": "pass",
+        "revision_id": "eval_48a79a043a1e54bc138b",
+        "run_id": "run_981f3d57991b7897cdbc",
+        "session_id": "0816a24c7c074f4982c2a81393716057",
+        "source_evidence": [],
+        "usage": {
+          "cost_usd": null,
+          "output_token_budget": "unknown",
+          "provenance": "target_reported",
+          "total_tokens": null
+        }
+      }
+    ],
+    "source_hash": "34996a7e4625c9475c9d13801573d3a16f4e9325ab3074fea5af9408abd2dae1",
+    "started_at": "2026-10-03T14:41:11.139819+00:00",
+    "state": "completed",
+    "suite_artifact": "c5802f7c0a7c51f3dbf68d217708917cfa625a40987b1a0250419bf4c6d09251",
+    "suite_hash": "c5802f7c0a7c51f3dbf68d217708917cfa625a40987b1a0250419bf4c6d09251",
+    "suite_id": "http-controls",
+    "suite_version": "1",
+    "target_hash": "a6e225a3276d498525c61b43be2b8ff5a22a5b03f728293695a9c67abc2b57b8",
+    "target_id": "control",
+    "updated_at": "2026-10-03T14:41:11.349932+00:00"
+  },
+  "target_image": "sha256:17e8beaddd7e1ea49d1e612a20be059cf4eea9c7bd9408db957c6aa91f1778b8"
+}

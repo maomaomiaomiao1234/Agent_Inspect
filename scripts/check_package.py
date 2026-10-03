@@ -40,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix="agent-review-wheel-") as temporary:
     detail = client.get("/api/runs/" + imported.json()["run_id"]).json()
     assert detail["evaluation"]["outcome"] == "pass"
     assert "generic_trace" in client.get("/api/schema").json()
+    assert "assessment_suite" in client.get("/api/schema").json()
     assert template.joinpath("evaluator.py").is_file()
     import httpx
 
@@ -63,4 +64,19 @@ with tempfile.TemporaryDirectory(prefix="agent-review-wheel-") as temporary:
                         ReviewConfig(api_url="https://mock.example/v1", model="mock", token="package-test"),
                         transport=httpx.MockTransport(mock))
     assert review.outcome == "inconclusive" and review.judge["backend"] == "chat-completions"
+    from agent_trace_review.assessment_contracts import AssessmentSuite, TargetDefinition
+    from agent_trace_review.assessment_store import AssessmentStore
+    from agent_trace_review.assessments import prepare_assessment, run_assessment
+
+    suite = AssessmentSuite.model_validate({"id": "package-assessment", "cases": [{"id": "echo",
+                                           "turns": [{"prompt": "Return answer=19"}],
+                                           "profile": {"profile_version": "1", "id": "answer",
+                                                       "rules": [{"id": "correct", "op": "equals", "path": "/output/answer", "value": 19}]}}]})
+    target = TargetDefinition(id="package-target", endpoint="https://mock.example", demo=True)
+    db = AssessmentStore(Store(root / "assessment-data"))
+    job, repository = prepare_assessment(db, target, suite)
+    result = run_assessment(db, job["id"], target, suite, repository,
+                            transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"output": {"answer": 19}})))
+    assert result["state"] == "completed" and result["results"][0]["outcome"] == "pass"
     print(f"Wheel API, UI, coding/generic imports, profiles, templates and mocked LLM review passed: {wheel.name}")
+    print("Wheel active assessment contracts, storage and HTTP adapter passed.")

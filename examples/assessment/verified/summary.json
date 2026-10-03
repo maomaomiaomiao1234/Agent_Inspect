@@ -1,0 +1,280 @@
+{
+  "validation_date": "2026-10-03",
+  "scope": "deterministic controls with actual HTTP; optional actual Docker target",
+  "scenarios": [
+    {
+      "candidate": "correct",
+      "assessment_id": "assessment_7d7418173d8344febe2b7eb4e1d4c4ea",
+      "suite_hash": "88d75debca1c0a7ae3e05873b5e9db371f8f3bccdfc3af0430aeddf4484b6090",
+      "engine_hash": "c2e40686d6f681ffe414c8f263acf92361c7ca9f1f121565591ec0daec85d419",
+      "commit": "e121cd2cdc7628363ec8478ee2728fdf85b4eec8",
+      "completed": 16,
+      "planned": 16,
+      "budgets": [
+        {
+          "budget": {
+            "deadline_seconds": 3.0,
+            "id": "small",
+            "max_output_tokens": 32
+          },
+          "fail": 0,
+          "mean_duration_ms": 15.512,
+          "observed": 8,
+          "pass": 8,
+          "pass_rate": 100.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        },
+        {
+          "budget": {
+            "deadline_seconds": 5.0,
+            "id": "large",
+            "max_output_tokens": 128
+          },
+          "fail": 0,
+          "mean_duration_ms": 15.256,
+          "observed": 8,
+          "pass": 8,
+          "pass_rate": 100.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        }
+      ],
+      "bundle_sha256": "620333239b8e452a112af4d5bad5240643b5b2d403192f1bc13dd843396724df"
+    },
+    {
+      "candidate": "incorrect",
+      "assessment_id": "assessment_13b60fed57dd4634836ac110eca65840",
+      "suite_hash": "88d75debca1c0a7ae3e05873b5e9db371f8f3bccdfc3af0430aeddf4484b6090",
+      "engine_hash": "c2e40686d6f681ffe414c8f263acf92361c7ca9f1f121565591ec0daec85d419",
+      "commit": "e121cd2cdc7628363ec8478ee2728fdf85b4eec8",
+      "completed": 16,
+      "planned": 16,
+      "budgets": [
+        {
+          "budget": {
+            "deadline_seconds": 3.0,
+            "id": "small",
+            "max_output_tokens": 32
+          },
+          "fail": 8,
+          "mean_duration_ms": 15.528,
+          "observed": 8,
+          "pass": 0,
+          "pass_rate": 0.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        },
+        {
+          "budget": {
+            "deadline_seconds": 5.0,
+            "id": "large",
+            "max_output_tokens": 128
+          },
+          "fail": 8,
+          "mean_duration_ms": 15.462,
+          "observed": 8,
+          "pass": 0,
+          "pass_rate": 0.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        }
+      ],
+      "bundle_sha256": "02c8316bdc975749b608335e9926c10807448a3023a4613221c111e5935d5f97"
+    },
+    {
+      "candidate": "noop",
+      "assessment_id": "assessment_cd03da530103494a8605f649800041fe",
+      "suite_hash": "88d75debca1c0a7ae3e05873b5e9db371f8f3bccdfc3af0430aeddf4484b6090",
+      "engine_hash": "c2e40686d6f681ffe414c8f263acf92361c7ca9f1f121565591ec0daec85d419",
+      "commit": "e121cd2cdc7628363ec8478ee2728fdf85b4eec8",
+      "completed": 16,
+      "planned": 16,
+      "budgets": [
+        {
+          "budget": {
+            "deadline_seconds": 3.0,
+            "id": "small",
+            "max_output_tokens": 32
+          },
+          "fail": 8,
+          "mean_duration_ms": 15.317,
+          "observed": 8,
+          "pass": 0,
+          "pass_rate": 0.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        },
+        {
+          "budget": {
+            "deadline_seconds": 5.0,
+            "id": "large",
+            "max_output_tokens": 128
+          },
+          "fail": 8,
+          "mean_duration_ms": 15.199,
+          "observed": 8,
+          "pass": 0,
+          "pass_rate": 0.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        }
+      ],
+      "bundle_sha256": "a2d1c427e4f9d0c294051ba789a9c97ffc1555d26310f659a60bfb475bf8f55e"
+    },
+    {
+      "candidate": "missing",
+      "assessment_id": "assessment_d7a15bd7762e4a24bee3d802677f090e",
+      "suite_hash": "88d75debca1c0a7ae3e05873b5e9db371f8f3bccdfc3af0430aeddf4484b6090",
+      "engine_hash": "c2e40686d6f681ffe414c8f263acf92361c7ca9f1f121565591ec0daec85d419",
+      "commit": "e121cd2cdc7628363ec8478ee2728fdf85b4eec8",
+      "completed": 16,
+      "planned": 16,
+      "budgets": [
+        {
+          "budget": {
+            "deadline_seconds": 3.0,
+            "id": "small",
+            "max_output_tokens": 32
+          },
+          "fail": 0,
+          "mean_duration_ms": 13.3,
+          "observed": 8,
+          "pass": 0,
+          "pass_rate": 0.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 8
+        },
+        {
+          "budget": {
+            "deadline_seconds": 5.0,
+            "id": "large",
+            "max_output_tokens": 128
+          },
+          "fail": 0,
+          "mean_duration_ms": 12.878,
+          "observed": 8,
+          "pass": 0,
+          "pass_rate": 0.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 8
+        }
+      ],
+      "bundle_sha256": "d082ba321830a40e9d95a501b6e7914d41c13935095743f1d896f53a758d2384"
+    },
+    {
+      "candidate": "leaky",
+      "assessment_id": "assessment_293a8c990a194a079e3ab44777ea4f85",
+      "suite_hash": "88d75debca1c0a7ae3e05873b5e9db371f8f3bccdfc3af0430aeddf4484b6090",
+      "engine_hash": "c2e40686d6f681ffe414c8f263acf92361c7ca9f1f121565591ec0daec85d419",
+      "commit": "e121cd2cdc7628363ec8478ee2728fdf85b4eec8",
+      "completed": 16,
+      "planned": 16,
+      "budgets": [
+        {
+          "budget": {
+            "deadline_seconds": 3.0,
+            "id": "small",
+            "max_output_tokens": 32
+          },
+          "fail": 2,
+          "mean_duration_ms": 15.487,
+          "observed": 8,
+          "pass": 6,
+          "pass_rate": 75.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        },
+        {
+          "budget": {
+            "deadline_seconds": 5.0,
+            "id": "large",
+            "max_output_tokens": 128
+          },
+          "fail": 2,
+          "mean_duration_ms": 15.445,
+          "observed": 8,
+          "pass": 6,
+          "pass_rate": 75.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        }
+      ],
+      "bundle_sha256": "050852081f1680885acd6b01ad9f9688cfc9e18ce0960bd725241d0aaa39cded"
+    },
+    {
+      "candidate": "docker",
+      "assessment_id": "assessment_dd050507fdc54a53b53384394f439dbf",
+      "suite_hash": "88d75debca1c0a7ae3e05873b5e9db371f8f3bccdfc3af0430aeddf4484b6090",
+      "engine_hash": "c2e40686d6f681ffe414c8f263acf92361c7ca9f1f121565591ec0daec85d419",
+      "commit": "e121cd2cdc7628363ec8478ee2728fdf85b4eec8",
+      "completed": 16,
+      "planned": 16,
+      "budgets": [
+        {
+          "budget": {
+            "deadline_seconds": 3.0,
+            "id": "small",
+            "max_output_tokens": 32
+          },
+          "fail": 0,
+          "mean_duration_ms": 19.243,
+          "observed": 8,
+          "pass": 8,
+          "pass_rate": 100.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        },
+        {
+          "budget": {
+            "deadline_seconds": 5.0,
+            "id": "large",
+            "max_output_tokens": 128
+          },
+          "fail": 0,
+          "mean_duration_ms": 16.244,
+          "observed": 8,
+          "pass": 8,
+          "pass_rate": 100.0,
+          "planned": 8,
+          "reported_cost_usd": null,
+          "reported_total_tokens": null,
+          "unknown": 0
+        }
+      ],
+      "bundle_sha256": "300a8dcad06aa48ddd0b1e0c449dc44e4b670d724c7b164b62eae30e906316d2"
+    }
+  ],
+  "service_deployment": {
+    "path": "service-deployment.json",
+    "sha256": "325bb7384c2bbed9730bd7956f8079458531022c61f8219555c19e0521888004",
+    "image_id": "sha256:de095cd30858b7177f2113cd0e9d90f4ef8f491da61d767b5fef250256064b14",
+    "assessment_id": "assessment_522cd9022d944fcc8d37dffde6e7fd7a",
+    "engine_hash": "c2e40686d6f681ffe414c8f263acf92361c7ca9f1f121565591ec0daec85d419",
+    "platform": "linux/arm64",
+    "completed": 16,
+    "cleanup_verified": true
+  }
+}

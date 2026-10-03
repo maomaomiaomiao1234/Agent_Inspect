@@ -1,10 +1,12 @@
 # Agent Trace Review
 
-**把 Agent 的运行记录和输出导入本地，查看它做了什么、结果是否满足要求，以及用了多少资源。**
+**评审其他 Agent：主动发起任务并独立验收，也可以导入已有轨迹，检查结果、过程和资源。**
 
-本项目适合复盘 OpenCode 会话，也支持把其他 Agent 的输入、输出和可见工具调用整理成通用 JSON 后评估。你可以在网页中检查证据、比较运行，并导出报告。
+本项目支持扫描固定版本的开源仓库、向登记的 Agent 服务发起多轮任务、验证能力声明、检查会话隔离、比较预算与版本回归，并导出带证据的报告。已有 OpenCode/通用轨迹、代码修复和文档验收流程继续可用。
 
 **第一次使用，建议按这个顺序：启动网页 → 加载通过示例 → 查看结果和证据 → 导入自己的数据。** 基础体验无需 OpenCode、Docker 或 API Token。
+
+如果你的目标是「部署一个评审其他 Agent 的 Agent」，安装后直接看 [主动评测快速开始](#active-assessment)。首版提供固定题集驱动的编排服务，真实目标需要适配项目的 HTTP 协议；当前不自动构建任意仓库，也不代表官方基准成绩。
 
 - [1. 安装并启动](#start)
 - [2. 跑通第一个示例](#first-run)
@@ -13,8 +15,9 @@
 - [5. 导出、比较和保存数据](#reports)
 - [6. 常见问题](#faq)
 - [7. 进阶接口与开发](#advanced)
+- [8. 主动评测与服务部署](#active-assessment)
 
-> 当前包版本为 0.3.0。本文以当前源码为准；目录中已有的 `dist/` 和 skill 内置 wheel 尚未同步最近的代码修复、文档评估功能，首次体验请采用下面的源码启动方式。
+> 当前包版本为 0.3.0。2026-10-03 已重建并验证 wheel 与 skill 内置引擎，包含代码修复、文档评估和主动评测功能。下面的源码启动方式同时提供可运行的示例与部署配置。
 
 <a id="start"></a>
 ## 1. 安装并启动
@@ -309,7 +312,7 @@ uv run agent-review compare RUN_ID_A RUN_ID_B --data-dir ./.agent-review
 
 如需隔离不同实验，给所有相关命令传入同一个新的绝对 `--data-dir`。CLI 导入后刷新网页；目录不一致时，网页看不到那次运行。
 
-基础分析保存在本机。显式执行 LLM 评审才会向配置的接口发送任务材料。导入会对常见密钥脱敏，但业务内容仍可能敏感；分享报告或 bundle 前请检查内容。服务仅监听 `127.0.0.1`，当前面向单机使用。
+基础分析保存在本机。显式执行 LLM 评审或主动评测会向配置的接口发送相应任务材料。导入会对常见密钥脱敏，但业务内容仍可能敏感；分享报告或 bundle 前请检查内容。服务默认监听 `127.0.0.1`；远程部署须配置访问令牌，当前任务队列使用单个服务进程。
 
 <a id="faq"></a>
 ## 6. 常见问题
@@ -327,7 +330,7 @@ uv run agent-review compare RUN_ID_A RUN_ID_B --data-dir ./.agent-review
 | `init-task` 拒绝创建目录 | 目标目录非空；换一个新目录，或继续编辑已有模板 |
 | 代码示例提示 Docker 不可用或镜像缺失 | 启动 Docker，准备 `python:3.12-slim`；也可先导入历史 bundle 查看报告 |
 | 想体验但没有 API Token | 使用第一组示例、本地 Profile 或文档示例即可；调用外部模型时才需要凭据 |
-| wheel 或 skill 中找不到文档评估命令 | 当前已有分发包尚未更新，请按第一节从最新源码启动 |
+| wheel 或 skill 中找不到新命令 | 更新到 2026-10-03 重建的引擎，或按第一节从最新源码启动；仅核对 0.3.0 版本号不足以区分历史包 |
 
 <a id="advanced"></a>
 ## 7. 进阶接口与开发
@@ -342,7 +345,7 @@ uv run agent-review compare RUN_ID_A RUN_ID_B --data-dir ./.agent-review
 | HTTP API | 服务启动后打开 [交互式接口文档](http://127.0.0.1:8765/docs)；写请求要求 `X-Review-Request: 1` |
 | 机器可读的数据合同 | `uv run agent-review schema --output schema.json` |
 | 全部命令及参数 | `uv run agent-review --help`，或在子命令后加 `--help` |
-| Skill 形式使用 | [opencode-trace-review](skills/opencode-trace-review/SKILL.md)；内置引擎需重新打包才能获得最新功能 |
+| Skill 形式使用 | [opencode-trace-review](skills/opencode-trace-review/SKILL.md)；内置引擎已刷新，主动评测示例见下节 |
 | 产品设计与开发交接 | [实施计划](IMPLEMENTATION_PLAN.zh-CN.md)、[handoff](HANDOFF.zh-CN.md) |
 
 ### 开发与验证
@@ -375,6 +378,40 @@ uv run python scripts/check_package.py dist/agent_trace_review-0.3.0-py3-none-an
 uv run python scripts/package_skill.py
 ```
 
-构建的 wheel 包含网页，安装后运行服务无需 Node.js。Skill 内置引擎需要最后一步刷新；本文开头的旧包提示描述的是当前目录中已有的分发文件。
+构建的 wheel 包含网页，安装后运行服务无需 Node.js。源码继续修改后，需执行最后一步刷新 Skill 内置引擎；启动器以 wheel SHA-256 区分同版本的不同构建。
 
-项目核心代码位于 `src/agent_trace_review/`，网页位于 `web/src/`，验证脚本位于 `scripts/`。目前未实现实时采集、任意 Agent 框架自动适配、任意仓库验证调度和团队云端部署。真实任务接入请从可见材料、明确标准和独立验证开始。
+项目核心代码位于 `src/agent_trace_review/`，网页位于 `web/src/`，验证脚本位于 `scripts/`。主动评测服务采用单进程任务队列，支持登记的 HTTP 目标和已构建的固定 Docker 镜像；真实任务需要明确的题集和独立标准。
+
+<a id="active-assessment"></a>
+## 8. 主动评测与服务部署
+
+安装并构建网页后，先启动内置控制 Agent：
+
+```sh
+uv run python examples/assessment/mock_agent.py --port 9081
+```
+
+另一个终端启动评审服务：
+
+```sh
+uv run agent-review serve --data-dir ./review-data \
+  --targets examples/assessment/targets.json --port 8765
+```
+
+打开 [主动评测页面](http://127.0.0.1:8765/#/assessments)，选择 `control`，上传 `examples/assessment/suite.json`，点击「开始评测」。这会实际发起 HTTP 请求；4 个案例 × 2 个预算 × 2 次重复应得到 **16/16 通过**。切换 `incorrect`、`noop`、`missing`、`leaky` 可以分别校准错误答案、空答、证据不足和会话泄漏。控制 Agent 没有调用模型，所有记录标记为示例。
+
+已支持的功能：
+
+| 功能 | 实现方式 |
+| --- | --- |
+| 仓库能力档案 | 只读扫描固定 Git commit，记录 README 声明、入口/依赖/环境线索、文件哈希和行号 |
+| 主动任务验收 | 通过 `agent-review/target-v1` 服务协议实际发题，标准答案留在评审端 |
+| 多轮、记忆、隔离、鲁棒性 | 配置多轮题目、是否提供历史消息及专项 Profile，每个案例使用独立 session |
+| 能力声明验证 | 将档案 claim_id 与案例关联，区分已支持、未满足、证据不足和未测试 |
+| 预算与重复测量 | 对固定题集运行多档期限/Token 请求预算，记录结果和自报用量；缺失保持未知 |
+| 源码与版本回归 | 报告关联固定源码位置，对比一致题集/执行器下的逐案例变化 |
+| 服务与部署 | 异步任务、取消、重启中断恢复、访问令牌、Dockerfile/Compose、固定镜像启动检查和清理 |
+
+真实目标需要管理员登记地址、固定仓库版本和环境变量名称，并实现 HTTP 适配入口。当前不自动构建任意仓库、不认证镜像与源码的来源绑定，也不把控制样例当作官方能力成绩。
+
+详细配置、协议、题集规则、API、Docker 部署和限制见 [主动评测指南](docs/ACTIVE_ASSESSMENT.zh-CN.md)；本轮验证见 [专项验收记录](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)。

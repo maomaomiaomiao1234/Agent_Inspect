@@ -1,0 +1,7 @@
+[
+  {"id": "control", "endpoint": "http://control-agent:9081", "task_path": "/correct", "health_path": "/health", "demo": true},
+  {"id": "incorrect", "endpoint": "http://control-agent:9081", "task_path": "/incorrect", "health_path": "/health", "demo": true},
+  {"id": "noop", "endpoint": "http://control-agent:9081", "task_path": "/noop", "health_path": "/health", "demo": true},
+  {"id": "missing", "endpoint": "http://control-agent:9081", "task_path": "/missing", "health_path": "/health", "demo": true},
+  {"id": "leaky", "endpoint": "http://control-agent:9081", "task_path": "/leaky", "health_path": "/health", "demo": true}
+]

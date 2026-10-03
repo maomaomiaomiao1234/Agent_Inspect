@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { api, apiFetch, DownloadLink, setAccessToken } from "./api-client";
+import { Assessments } from "./assessments";
 import {
   Activity,
   ArrowDownToLine,
@@ -82,26 +84,6 @@ type Comparison = {
   }[];
 };
 
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const result = await fetch("/api" + path, {
-    ...options,
-    headers: { "X-Review-Request": "1", ...options?.headers },
-  });
-  if (!result.ok) {
-    let message = await result.text();
-    try {
-      const parsed = JSON.parse(message);
-      message =
-        typeof parsed.detail === "string"
-          ? parsed.detail
-          : JSON.stringify(parsed.detail);
-    } catch {
-      /* plain error */
-    }
-    throw new Error(message || `请求失败 (${result.status})`);
-  }
-  return result.json();
-}
 function go(path: string) {
   location.hash = "#" + path;
 }
@@ -261,6 +243,10 @@ function App() {
           本地工作区 <span className="live-dot" />
         </div>
         <nav>
+          <a className={path === "/assessments" ? "active" : ""} href="#/assessments">
+            <FlaskConical size={18} />
+            主动评测
+          </a>
           <a className={path.startsWith("/runs") ? "active" : ""} href="#/runs">
             <LayoutList size={18} />
             运行记录 <span>{runs.length}</span>
@@ -298,12 +284,14 @@ function App() {
                   ? "运行比较"
                   : path === "/guide"
                     ? "接入指南"
+                    : path === "/assessments"
+                      ? "主动评测"
                     : "运行记录"}
             </b>
           </div>
           <div className="local-chip">
             <span className="live-dot" />
-            数据存储在本机
+            数据存储在评审服务
           </div>
         </header>
         <main>
@@ -322,6 +310,8 @@ function App() {
               initialFinding={params.get("finding")}
               onError={setError}
             />
+          ) : path === "/assessments" ? (
+            <Assessments />
           ) : path === "/compare" ? (
             <CompareView
               runs={runs}
@@ -804,7 +794,7 @@ function DocumentResult({ run }: { run: Detail["run"] }) {
   return <div className="document-result">
     <div className="document-result-heading">
       <div><h3>转换产物</h3><p>固定数字 PDF 样例；不含 OCR、公式、合并单元格或版式保真验收。</p></div>
-      <a className="button" href={`/api/runs/${run.id}/document.pdf`}><ArrowDownToLine size={16} />下载源 PDF</a>
+      <DownloadLink path={`/runs/${run.id}/document.pdf`}><ArrowDownToLine size={16} />下载源 PDF</DownloadLink>
     </div>
     <h3>Markdown</h3>
     {typeof output.markdown === "string" ? <pre className="output document-markdown">{output.markdown}</pre> : <p>未提供 Markdown 输出。</p>}
@@ -901,7 +891,7 @@ function RunDetail({
           text: JSON.stringify(ref.query, null, 2),
         });
       } else if (ref.artifact_id) {
-        const res = await fetch("/api/artifacts/" + ref.artifact_id);
+        const res = await apiFetch("/artifacts/" + ref.artifact_id);
         if (!res.ok) throw new Error("证据文件读取失败");
         let text = await res.text();
         if (ref.pointer) {
@@ -977,13 +967,13 @@ function RunDetail({
               : run.execution_status}
           </p>
         </div>
-        <a
+        <DownloadLink
           className="button"
-          href={`/api/runs/${runId}/export?format=markdown&revision=${evaluation.id}`}
+          path={`/runs/${runId}/export?format=markdown&revision=${evaluation.id}`}
         >
           <ArrowDownToLine size={16} />
           导出报告
-        </a>
+        </DownloadLink>
       </div>
       <div className={`outcome-bar ${evaluation.outcome}`}>
         <Status value={evaluation.outcome} />
@@ -1466,13 +1456,13 @@ function RunDetail({
               ))}
               <pre>{JSON.stringify(run.task, null, 2)}</pre>
             </details>
-            <a
+            <DownloadLink
               className="button"
-              href={`/api/runs/${runId}/export?format=bundle`}
+              path={`/runs/${runId}/export?format=bundle`}
             >
               <ArrowDownToLine size={14} />
               导出可移植运行包
-            </a>
+            </DownloadLink>
           </section>
         </div>
       )}
@@ -1996,8 +1986,37 @@ function Guide({ dataDir }: { dataDir?: string }) {
   );
 }
 
+function ServiceAccess() {
+  const [required, setRequired] = useState<boolean | null>(null);
+  const [authorized, setAuthorized] = useState(false);
+  const [token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api<{ authentication_required?: boolean }>("/health")
+      .then(health => setRequired(!!health.authentication_required))
+      .catch(e => setError(e.message));
+  }, []);
+  if (required === false || authorized) return <App />;
+  return <main className="service-access standalone-panel">
+    <h1>连接评审服务</h1>
+    {error && <p className="error-banner" role="alert">{error}</p>}
+    {required === null ? <p>正在连接服务…</p> : <form onSubmit={async e => {
+      e.preventDefault(); setBusy(true); setError(""); setAccessToken(token);
+      try { await api("/targets"); setToken(""); setAuthorized(true); }
+      catch (e) { setAccessToken(""); setError((e as Error).message); }
+      finally { setBusy(false); }
+    }}>
+      <p>输入管理员提供的服务访问令牌。令牌只保留在当前页面内存中。</p>
+      <label>服务访问令牌<input aria-label="服务访问令牌" type="password" autoComplete="off" required
+        value={token} onChange={e => setToken(e.target.value)} /></label>
+      <button className="primary" disabled={busy}>连接服务</button>
+    </form>}
+  </main>;
+}
+
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <ServiceAccess />
   </React.StrictMode>,
 );
