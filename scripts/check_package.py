@@ -42,6 +42,18 @@ with tempfile.TemporaryDirectory(prefix="agent-review-wheel-") as temporary:
     assert "generic_trace" in client.get("/api/schema").json()
     assert "assessment_suite" in client.get("/api/schema").json()
     assert "suite_generation_input" in client.get("/api/schema").json()
+    assert "repository_plan_input" in client.get("/api/schema").json()
+    from agent_trace_review.assessment_contracts import RepositoryPlanInput
+    from agent_trace_review.repositories import inspect_repository
+    from agent_trace_review.repository_planning import plan_repository
+
+    source = root / "source"
+    source.mkdir()
+    (source / "tools.py").write_text("@tool\ndef calculator(a, b, operation): pass\n")
+    plan = plan_repository(inspect_repository(source), RepositoryPlanInput(cases=3, concurrency=2))
+    assert plan["tool_candidates"][0]["name"] == "calculator"
+    assert plan["suite"]["repository_source_hash"] == plan["source_hash"]
+    assert plan["suite"]["concurrency"] == 2
     assert "repository_manifest" in client.get("/api/schema").json()
     assert not client.get("/api/repository-builds").json()["enabled"]
     from agent_trace_review.repository_jobs import smolagents_adapter, smolagents_telemetry

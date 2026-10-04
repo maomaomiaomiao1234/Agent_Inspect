@@ -1,21 +1,23 @@
 """Repository URL -> fixed checkout -> Docker build -> existing assessment engine."""
 
+import json
 import os
 import re
 import shutil
 from importlib.resources import files
 from pathlib import Path
 
-from .assessment_contracts import DockerDeployment, TargetDefinition
+from .assessment_contracts import AssessmentSuite, DockerDeployment, TargetDefinition
 from .assessment_store import AssessmentStore
 from .assessments import assessment_bundle, prepare_assessment, run_assessment
 from .repositories import SKIP, inspect_repository
 from .repository_contracts import RepositoryAssessmentInput, RepositoryManifest
+from .repository_planning import plan_repository
 from .repository_process import RepositoryError, run_process
 from .repository_store import RepositoryJobStore
 from .suite_generation import generate_suite
 from .target_client import TargetError, _docker, scrub
-from .util import digest, now
+from .util import canonical, digest, now
 
 MAX_SOURCE_BYTES = 200 * 1024 * 1024
 MAX_SOURCE_FILES = 20000
@@ -170,7 +172,7 @@ def build_plan(request, root, work, *, commit=None):
                 "context_hash": digest([source_hash, digest(adapter), digest(telemetry), dockerfile]), "dockerfile": "Dockerfile"}
     else:
         raise RepositoryError("unsupported_repository_requires_manifest")
-    if request.suite is None and manifest.test_template is None:
+    if request.suite is None and request.planning is None and manifest.test_template is None:
         raise RepositoryError("independent_suite_required")
     if any(key not in request.environment for key in manifest.required_environment):
         raise RepositoryError("required_environment_mapping_missing")
@@ -287,6 +289,10 @@ class RepositoryManager:
             stage("inspecting")
             manifest, suite, plan = build_plan(request, root, work, commit=commit)
             repository = self.assessments.db.save_repository(inspect_repository(root, commit, request.repository_url))
+            if request.planning:
+                assessment_plan = plan_repository(repository, request.planning)
+                suite = AssessmentSuite.model_validate(assessment_plan["suite"])
+                plan["assessment_plan_artifact"] = self.store.put_artifact(canonical(assessment_plan).encode())
             plan.update({"repository_url": request.repository_url, "commit": commit,
                          "source_binding": "built_from_checkout", "dependency_locking": "repository_defined"})
             self.db.patch(job_id, recipe=plan["recipe"], provenance=plan, repository_id=repository["id"],
@@ -311,7 +317,7 @@ class RepositoryManager:
                 task_path=manifest.task_path, health_path=manifest.health_path,
                 health_status_field=manifest.health_status_field, health_status_value=manifest.health_status_value,
                 repository=str(root), ref=commit, repository_url=request.repository_url, demo=manifest.demo)
-            child, snapshot = prepare_assessment(self.assessments.db, target, suite)
+            child, snapshot = prepare_assessment(self.assessments.db, target, suite, repository=repository)
             body = {k: v for k, v in child.items() if k not in {"id", "state", "created_at", "updated_at", "cancel_requested"}}
             body["build_provenance"] = {**plan, "image_id": image_id, "repository_job_id": job_id}
             body["target_hash"] = digest({**target.model_dump(), "repository": request.repository_url})
@@ -353,7 +359,9 @@ class RepositoryManager:
 def repository_bundle(store, job_id):
     job = RepositoryJobStore(store).get(job_id)
     assessments = AssessmentStore(store)
+    plan_artifact = (job.get("provenance") or {}).get("assessment_plan_artifact")
     return {"repository_assessment_version": "agent-review/repository-assessment-v1", "job": job,
+            "assessment_plan": json.loads(store.get_artifact(plan_artifact)[0]) if plan_artifact else None,
             "assessment": assessment_bundle(assessments, assessments.job(job["assessment_id"])) if job["assessment_id"] else None,
             "logs": [{**item, "text": store.get_artifact(item["artifact_id"])[0].decode()}
                      for item in job["log_artifacts"]]}

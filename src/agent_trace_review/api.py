@@ -16,6 +16,7 @@ from .analysis import analyze, compare
 from .assessment_contracts import (
     AssessmentInput,
     AssessmentSuite,
+    RepositoryPlanInput,
     SuiteGenerationInput,
     TargetDefinition,
     TargetRequest,
@@ -43,6 +44,7 @@ from .reports import junit_report, markdown_report
 from .repositories import compare_repositories, inspect_repository
 from .repository_contracts import RepositoryAssessmentInput, RepositoryManifest
 from .repository_jobs import RepositoryManager
+from .repository_planning import plan_repository
 from .service import ingest
 from .storage import Store
 from .suite_generation import generate_suite
@@ -213,6 +215,10 @@ def create_app(
     @app.get("/api/repository-profiles/{repository_id}")
     def stored_repository_profile(repository_id: str):
         return manager.db.repository(repository_id)
+
+    @app.post("/api/assessment-suites/plan/{repository_id}")
+    def repository_assessment_plan(repository_id: str, body: RepositoryPlanInput):
+        return plan_repository(manager.db.repository(repository_id), body)
 
     @app.post("/api/repository-comparisons")
     def repository_comparison(body: ComparisonInput):
@@ -509,6 +515,7 @@ def create_app(
             "evaluator_response": EvaluatorResponse.model_json_schema(),
             "assessment_suite": AssessmentSuite.model_json_schema(),
             "suite_generation_input": SuiteGenerationInput.model_json_schema(),
+            "repository_plan_input": RepositoryPlanInput.model_json_schema(),
             "repository_assessment_input": RepositoryAssessmentInput.model_json_schema(),
             "repository_manifest": RepositoryManifest.model_json_schema(),
             "target_definition": TargetDefinition.model_json_schema(),

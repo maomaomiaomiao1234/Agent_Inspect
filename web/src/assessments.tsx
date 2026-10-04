@@ -7,6 +7,16 @@ type GeneratedSuite = { id: string; description: string; cases: { id: string; tu
 type Source = { path: string; line: number; url?: string };
 type Claim = Source & { id: string; capability: string; snippet: string; assessment_status?: string };
 type Repository = { id: string; commit: string | null; snapshot_kind: string; files: unknown[]; claims: Claim[]; limitations: string[] };
+type Plan = { id: string; suite: GeneratedSuite; estimated_requests: number; max_serial_deadline_seconds: number;
+  dimensions: { id: string; label: string; cases: number }[]; gaps: { kind: string; name: string; reason: string }[];
+  tool_candidates: { name: string; path: string; line: number; parameters: string[] }[]; limitations: string[] };
+type Quality = { dimensions: { category: string; budget_id: string; observed: number; planned: number;
+  pass: number; fail: number; unknown: number; confirmed_pass_rate: number; possible_pass_rate: number;
+  p50_duration_ms: number | null; p95_duration_ms: number | null }[];
+  stability: { case_id: string; budget_id: string; status: string; observed: number; planned: number }[];
+  source_coverage: { kind: string; name: string; path: string; line: number; status: string }[];
+  evidence: { token_known_runs: number; planned_runs: number; unknown_required_checks: number; required_checks: number };
+  limitations: string[] };
 type Telemetry = { coverage: "complete" | "partial" | "unavailable"; llm_calls: number | null; tool_calls: number | null;
   llm_errors: number | null; tool_errors: number | null; llm_duration_ms: number | null; tool_duration_ms: number | null;
   models: { model: string; calls: number; tokens: { input: number | null; output: number | null; total: number | null }; duration_ms: number | null }[] };
@@ -19,6 +29,7 @@ type Job = {
     execution_state: string; error: string | null; source_evidence: Source[]; telemetry?: Telemetry;
     usage?: { input_tokens?: number | null; output_tokens?: number | null; total_tokens: number | null } }[];
   claims: Claim[]; limitations: string[];
+  quality?: Quality; concurrency?: number;
 };
 
 const stateLabel: Record<string, string> = { queued: "排队中", running: "执行中", completed: "已完成",
@@ -26,6 +37,9 @@ const stateLabel: Record<string, string> = { queued: "排队中", running: "执�
 const outcomeLabel: Record<string, string> = { pass: "通过", fail: "失败", inconclusive: "证据不足" };
 const claimLabel: Record<string, string> = { untested: "未测试", supported_for_cases: "这些案例支持声明",
   contradicted_by_cases: "有案例未满足声明", inconclusive: "证据不足" };
+const qualityLabel: Record<string, string> = { consistent_pass: "重复通过", consistent_fail: "重复失败",
+  variable: "结果波动", incomplete: "证据不全", insufficient_repeats: "重复次数不足",
+  observed_for_cases: "已观察到调用", not_observed: "尚未观察到调用", untested: "未测试" };
 
 function callCount(value: number | null | undefined, telemetry?: Telemetry) {
   return value == null ? "未知" : `${telemetry?.coverage === "complete" ? "" : "≥"}${value}`;
@@ -47,6 +61,10 @@ export function Assessments() {
   const [generated, setGenerated] = useState<GeneratedSuite | null>(null);
   const [caseCount, setCaseCount] = useState(12);
   const [seed, setSeed] = useState(42);
+  const [template, setTemplate] = useState("smolagents");
+  const [attempts, setAttempts] = useState(1);
+  const [concurrency, setConcurrency] = useState(1);
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selected, setSelected] = useState("");
   const [job, setJob] = useState<Job | null>(null);
@@ -100,11 +118,13 @@ export function Assessments() {
       <h2>新建评测</h2>
       {!targets.length ? <p>尚未登记目标。管理员启动服务时使用 <code>--targets targets.json</code> 配置服务地址；README 提供可直接运行的控制 Agent。</p> : <>
         <div className="assessment-controls">
-          <label>被测 Agent<select aria-label="被测 Agent" value={target} onChange={e => { setTarget(e.target.value); setRepository(null); }}>
+          <label>被测 Agent<select aria-label="被测 Agent" value={target} onChange={e => {
+            setTarget(e.target.value); setRepository(null); setPlan(null); setSuite(null); setGenerated(null); setSuiteName("");
+          }}>
             {targets.map(t => <option key={t.id} value={t.id}>{t.id}{t.demo ? "（控制示例）" : ""}{t.managed ? " · Docker" : ""}</option>)}
           </select></label>
           <label>固定题集 JSON<input aria-label="固定题集 JSON" type="file" accept=".json,application/json" onChange={async e => {
-            const file = e.target.files?.[0]; setSuite(null); setSuiteName(""); setGenerated(null); setError("");
+            const file = e.target.files?.[0]; setSuite(null); setSuiteName(""); setGenerated(null); setPlan(null); setError("");
             if (!file) return;
             try {
               if (file.size > 1024 * 1024) throw new Error("题集超过 1 MB。");
@@ -122,19 +142,35 @@ export function Assessments() {
         </div>
         <h3>自动生成测试文件</h3>
         <div className="assessment-controls">
-          <label>测试模板<select aria-label="测试模板" disabled={busy}>
+          <label>测试模板<select aria-label="测试模板" disabled={busy} value={template} onChange={e => setTemplate(e.target.value)}>
             <option value="smolagents">smolagents 基础能力</option>
+            <option value="repository">根据源码规划评测</option>
           </select></label>
           <label>案例数量<input aria-label="案例数量" type="number" min="1" max="30" step="1"
             value={caseCount} onChange={e => setCaseCount(Number(e.target.value))} /></label>
           <label>随机种子<input aria-label="随机种子" type="number" min="0" max="2147483647" step="1"
             value={seed} onChange={e => setSeed(Number(e.target.value))} /></label>
+          {template === "repository" && <>
+            <label>重复次数<select aria-label="重复次数" value={attempts} onChange={e => setAttempts(Number(e.target.value))}>
+              {[1, 2, 3].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
+            <label>案例并发<select aria-label="案例并发" value={concurrency} onChange={e => setConcurrency(Number(e.target.value))}>
+              {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
+          </>}
           <button disabled={busy || !Number.isInteger(caseCount) || caseCount < 1 || caseCount > 30
+            || (template === "repository" && !targets.find(t => t.id === target)?.repository_configured)
             || !Number.isInteger(seed) || seed < 0 || seed > 2147483647} onClick={() => action(async () => {
+            if (template === "repository") {
+              const snapshot = await api<Repository>(`/targets/${encodeURIComponent(target)}/repository-profile`, { method: "POST" });
+              setRepository(snapshot);
+              const planned = await api<Plan>(`/assessment-suites/plan/${snapshot.id}`, { method: "POST",
+                headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cases: caseCount, seed, attempts, concurrency }) });
+              setPlan(planned); setGenerated(planned.suite); setSuite(planned.suite); setSuiteName(`${planned.suite.id}.json`);
+              return;
+            }
             const created = await api<GeneratedSuite>("/assessment-suites/generate", { method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ template: "smolagents", cases: caseCount, seed }) });
-            setGenerated(created); setSuite(created); setSuiteName(`${created.id}.json`);
+            setPlan(null); setGenerated(created); setSuite(created); setSuiteName(`${created.id}.json`);
           })}>生成测试文件</button>
           {generated && <button onClick={() => {
             const url = URL.createObjectURL(new Blob([JSON.stringify(generated, null, 2) + "\n"], { type: "application/json" }));
@@ -142,8 +178,18 @@ export function Assessments() {
             link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
           }}>下载测试 JSON</button>}
         </div>
-        <p className="scenario-note">生成无需模型额度。同一种子和案例数量可复现题目；标准答案由程序计算。
-          模板要求算术、保存代码、读取代码工具及示例的 JSON 输出约定。</p>
+        <p className="scenario-note">生成无需模型额度，标准答案由程序计算。源码规划要求登记仓库和 target-v1 服务，按源码线索选择受控任务。
+          smolagents 模板要求示例工具和 JSON 输出约定；源码规划要求各题指定的 JSON 输出，跨轮与隔离测试保持串行。</p>
+        {plan && <section aria-label="源码评测计划">
+          <h3>源码评测计划</h3>
+          <p>包含重复共 {plan.estimated_requests} 轮请求；累计任务期限最多 {plan.max_serial_deadline_seconds} 秒。</p>
+          <ul>{plan.dimensions.map(d => <li key={d.id}>{d.label}：{d.cases} 个案例</li>)}</ul>
+          <details><summary>静态工具候选（{plan.tool_candidates.length}）</summary><ul>{plan.tool_candidates.map((t, i) =>
+            <li key={i}>{t.name}({t.parameters.join(", ")}) · <SourceLink source={t} /></li>)}</ul></details>
+          <details><summary>待补测项（{plan.gaps.length}）</summary><ul>{plan.gaps.map((g, i) =>
+            <li key={i}>{g.name}：{g.reason}</li>)}</ul></details>
+          <details><summary>计划适用范围</summary><ul>{plan.limitations.map((v, i) => <li key={i}>{v}</li>)}</ul></details>
+        </section>}
         {generated && <div role="status"><p>已生成 {generated.cases.length} 个案例、
           {generated.cases.reduce((total, item) => total + item.turns.length, 0)} 轮请求。
           可下载保存，也可直接点击“开始评测”。</p>
@@ -181,6 +227,21 @@ export function Assessments() {
         <tbody>{job.curves.map(c => <tr key={c.budget.id}><td>{c.budget.id}</td><td>{c.pass}</td><td>{c.fail}</td><td>{c.unknown}</td>
           <td>{c.pass_rate}%</td><td>{c.mean_duration_ms == null ? "未知" : `${(c.mean_duration_ms / 1000).toFixed(2)} 秒`}</td><td>{c.reported_total_tokens ?? "未知"}</td></tr>)}</tbody></table></div>
       <p className="scenario-note">未知和未完成的案例保留在通过率分母中。耗时包含评审端开销；Token 与费用没有目标自报时保持未知。</p>
+      {job.quality && <section aria-label="维度覆盖与质量">
+        <h3>维度覆盖与质量</h3>
+        <p>案例并发上限 {job.concurrency ?? 1}；Token 已知 {job.quality.evidence.token_known_runs}/{job.quality.evidence.planned_runs} 次；
+          必需检查未知 {job.quality.evidence.unknown_required_checks}/{job.quality.evidence.required_checks} 项。</p>
+        <div className="assessment-table"><table><thead><tr><th>维度 / 预算</th><th>完成 / 计划</th><th>通过 / 失败 / 未知</th><th>通过率范围</th><th>p50 / p95 ms</th></tr></thead>
+          <tbody>{job.quality.dimensions.map(d => <tr key={`${d.category}-${d.budget_id}`}>
+            <td>{d.category} / {d.budget_id}</td><td>{d.observed} / {d.planned}</td><td>{d.pass} / {d.fail} / {d.unknown}</td>
+            <td>{d.confirmed_pass_rate}%–{d.possible_pass_rate}%</td><td>{d.p50_duration_ms ?? "未知"} / {d.p95_duration_ms ?? "未知"}</td>
+          </tr>)}</tbody></table></div>
+        <details><summary>重复稳定性</summary><ul>{job.quality.stability.map(s => <li key={`${s.case_id}-${s.budget_id}`}>
+          {s.case_id} / {s.budget_id}：{qualityLabel[s.status] || s.status}（{s.observed}/{s.planned}）</li>)}</ul></details>
+        <details><summary>源码覆盖与漏测</summary><ul>{job.quality.source_coverage.map((s, i) => <li key={i}>
+          {s.name}：{qualityLabel[s.status] || s.status} · <SourceLink source={s} /></li>)}</ul></details>
+        <p className="scenario-note">通过率范围表示未知项的最好与最坏情况，不是统计置信区间或总体能力分数。重复少于两次无法判断稳定性。</p>
+      </section>}
       <h3>模型与工具调用</h3>
       <p className="scenario-note">内部记录由目标自报。≥ 表示部分记录的可见下界；未知表示未采集。
         工具计数包含 final_answer；调用耗时之和可能包含并发重叠。点击“查看对话和验收”可查看逐次调用的参数、结果和状态。</p>

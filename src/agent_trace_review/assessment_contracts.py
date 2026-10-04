@@ -35,7 +35,10 @@ class SourceReference(Contract):
 class AssessmentCase(Contract):
     id: str = Field(pattern=ID)
     description: str = Field(default="", max_length=2000)
-    category: Literal["capability", "multi_turn", "robustness", "memory", "session_isolation"] = "capability"
+    category: Literal[
+        "capability", "multi_turn", "robustness", "memory", "session_isolation",
+        "structured_output", "instruction_following", "retrieval", "grounding", "tool_use",
+    ] = "capability"
     turns: list[Turn] = Field(min_length=1, max_length=10)
     input: dict[str, Any] = Field(default_factory=dict)
     profile: TaskProfile
@@ -51,6 +54,8 @@ class AssessmentSuite(Contract):
     cases: list[AssessmentCase] = Field(min_length=1, max_length=30)
     budgets: list[Budget] = Field(default_factory=lambda: [Budget()], min_length=1, max_length=5)
     attempts: int = Field(default=1, ge=1, le=10, strict=True)
+    concurrency: int = Field(default=1, ge=1, le=4, strict=True)
+    repository_source_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
     def bounded_work(self):
@@ -226,3 +231,10 @@ class SuiteGenerationInput(Contract):
     template: Literal["smolagents"] = "smolagents"
     cases: int = Field(default=12, ge=1, le=30, strict=True)
     seed: int = Field(default=42, ge=0, le=2147483647, strict=True)
+
+
+class RepositoryPlanInput(Contract):
+    cases: int = Field(default=12, ge=1, le=30, strict=True)
+    seed: int = Field(default=42, ge=0, le=2147483647, strict=True)
+    attempts: int = Field(default=1, ge=1, le=3, strict=True)
+    concurrency: int = Field(default=1, ge=1, le=4, strict=True)

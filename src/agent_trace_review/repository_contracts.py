@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from .assessment_contracts import AssessmentSuite, DockerDeployment, SuiteGenerationInput
+from .assessment_contracts import AssessmentSuite, DockerDeployment, RepositoryPlanInput, SuiteGenerationInput
 from .contracts import Contract
 
 ENV_NAME = r"^[A-Z][A-Z0-9_]{0,99}$"
@@ -37,6 +37,7 @@ class RepositoryAssessmentInput(Contract):
     manifest_path: str = Field(default="agent-review.json", max_length=300)
     generation: SuiteGenerationInput = Field(default_factory=SuiteGenerationInput)
     suite: AssessmentSuite | None = None
+    planning: RepositoryPlanInput | None = None
     backend: Literal["offline", "openai"] = "offline"
     environment: dict[str, str] = Field(default_factory=dict, max_length=20)
 
@@ -45,6 +46,8 @@ class RepositoryAssessmentInput(Contract):
 
     @model_validator(mode="after")
     def environment_names(self):
+        if self.suite is not None and self.planning is not None:
+            raise ValueError("自定义 suite 和源码 planning 只能选择一个。")
         if any(not re.fullmatch(ENV_NAME, k) or not re.fullmatch(ENV_NAME, v) for k, v in self.environment.items()):
             raise ValueError("环境变量仅接受名称映射，不能包含密钥值。")
         return self

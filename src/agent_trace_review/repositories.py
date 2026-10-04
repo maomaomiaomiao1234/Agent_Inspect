@@ -9,6 +9,7 @@ import time
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urlsplit
 
+from .source_tools import python_tools
 from .util import digest, now, redact
 
 MAX_FILES = 5000
@@ -178,7 +179,7 @@ def inspect_repository(path: Path, ref="HEAD", repository_url: str | None = None
                     blobs.append((relative, item.stat().st_size, None))
                 if len(blobs) + len(skipped) > MAX_FILES:
                     raise ValueError("仓库文件数量超过 5000。")
-    files, observations, claims = [], [], []
+    files, observations, claims, tools = [], [], [], []
     total = 0
     for name, size, oid in sorted(blobs):
         deadline()
@@ -208,6 +209,8 @@ def inspect_repository(path: Path, ref="HEAD", repository_url: str | None = None
             skipped.append({"path": name, "reason": "binary"})
             continue
         lines = content.splitlines()
+        if item.suffix == ".py" and len(tools) < 300:
+            tools.extend(python_tools(content, name)[:300 - len(tools)])
         files.append({"path": name, "sha256": digest(raw), "bytes": len(raw), "lines": len(lines)})
         for index, line in enumerate(lines, 1):
             evidence = {"path": name, "line": index, "snippet": _snippet(line)}
@@ -225,6 +228,11 @@ def inspect_repository(path: Path, ref="HEAD", repository_url: str | None = None
                             }
                         )
             kinds = []
+            if item.suffix in {".py", ".ts", ".js", ".tsx"}:
+                for capability, pattern in CAPABILITIES.items():
+                    if re.search(pattern, line, re.I) and len(observations) < 1000:
+                        observations.append({"kind": "capability_hint", "capability": capability,
+                                             "status": "static_observation", **evidence})
             if item.name in {"pyproject.toml", "requirements.txt", "package.json"} and re.search(
                 r"(?i)(dependencies|scripts|\[project|fastapi|langchain|langgraph|openai|anthropic|a2a|mcp)",
                 line,
@@ -253,6 +261,7 @@ def inspect_repository(path: Path, ref="HEAD", repository_url: str | None = None
         "files": files,
         "claims": claims,
         "observations": observations,
+        "tools": tools,
         "skipped": skipped,
         "limitations": [
             "静态声明和代码线索不证明运行能力。",

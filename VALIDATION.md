@@ -1,6 +1,8 @@
 # 验证记录索引
 
-历史记录按各自验证日期和范围保留。最新记录见 [模型与工具遥测（2026-10-04）](TARGET_TELEMETRY_VALIDATION.zh-CN.md)，此前为 [仓库自动部署并评测](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)、[自动生成测试文件](SUITE_GENERATION_VALIDATION.zh-CN.md)、[smolagents 框架/真实模型接入](examples/smolagents/VALIDATION.zh-CN.md)、[主动 Agent 评测与服务部署](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)、[代码修复](TASK2_VALIDATION.zh-CN.md) 和 [文档转换](TASK3_VALIDATION.zh-CN.md)；当前项目状态见 [开发交接](HANDOFF.zh-CN.md)。
+最新验收：[源码评测规划与质量增强（2026-10-05）](SOURCE_GUIDED_VALIDATION.zh-CN.md)，后端 345 通过、2 跳过，浏览器 3 通过；包含并发、独立答案、漏测清单、重复稳定性及安装包验证。
+
+历史记录按各自验证日期和范围保留，包括 [模型与工具遥测（2026-10-04）](TARGET_TELEMETRY_VALIDATION.zh-CN.md)、[仓库自动部署并评测](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)、[自动生成测试文件](SUITE_GENERATION_VALIDATION.zh-CN.md)、[smolagents 框架/真实模型接入](examples/smolagents/VALIDATION.zh-CN.md)、[主动 Agent 评测与服务部署](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)、[代码修复](TASK2_VALIDATION.zh-CN.md) 和 [文档转换](TASK3_VALIDATION.zh-CN.md)；当前项目状态见 [开发交接](HANDOFF.zh-CN.md)。
 
 ---
 

@@ -9,6 +9,7 @@ import typer
 from .analysis import compare
 from .assessment_contracts import (
     AssessmentSuite,
+    RepositoryPlanInput,
     SuiteGenerationInput,
     TargetDefinition,
     TargetRequest,
@@ -42,6 +43,7 @@ from .reports import markdown_report
 from .repositories import compare_repositories, inspect_repository
 from .repository_contracts import RepositoryAssessmentInput
 from .repository_jobs import RepositoryManager, repository_bundle
+from .repository_planning import plan_repository
 from .repository_store import RepositoryJobStore
 from .service import ingest
 from .storage import Store
@@ -352,6 +354,8 @@ def assess_repository(
     repository_url: str, ref: str = "HEAD", recipe: str = "auto", manifest: str = "agent-review.json",
     suite: Path | None = None, cases: int = typer.Option(12, min=1, max=30),
     seed: int = typer.Option(42, min=0, max=2147483647), backend: str = "offline",
+    source_plan: bool = typer.Option(False, help="从固定源码规划受控题集；不能与 --suite 同用。"),
+    attempts: int = typer.Option(1, min=1, max=3), concurrency: int = typer.Option(1, min=1, max=4),
     env: list[str] = typer.Option([], help="运行期环境变量 NAME=HOST_ENV；只传名称，不传密钥值。"),
     data_dir: Path = Path(".agent-review"), output: Path | None = None,
 ):
@@ -369,6 +373,7 @@ def assess_repository(
             raise ValueError("Suite 超过 1 MB。")
         request = RepositoryAssessmentInput(repository_url=repository_url, ref=ref, recipe=recipe,
             manifest_path=manifest, generation=SuiteGenerationInput(cases=cases, seed=seed), backend=backend,
+            planning=RepositoryPlanInput(cases=cases, seed=seed, attempts=attempts, concurrency=concurrency) if source_plan else None,
             environment=environment, suite=AssessmentSuite.model_validate_json(suite.read_bytes()) if suite else None)
         manager = AssessmentManager(Store(data_dir), {})
         repositories = RepositoryManager(manager, enabled=True, allowed_environment=environment.values())
@@ -488,6 +493,27 @@ def generate_assessment_suite(
         raise typer.BadParameter("输出文件已存在，请选择新文件名以保留已有题集。") from None
     except (ValueError, OSError):
         raise typer.BadParameter("无法生成题集；template 需为 smolagents，并检查案例数、seed 与输出路径。") from None
+
+
+@app.command("plan-repository")
+def plan_repository_command(
+    repository: Path, output: Path = Path("suite.repository.json"), ref: str = "HEAD",
+    cases: int = typer.Option(12, min=1, max=30), seed: int = typer.Option(42, min=0, max=2147483647),
+    attempts: int = typer.Option(1, min=1, max=3), concurrency: int = typer.Option(1, min=1, max=4),
+):
+    """只读源码，生成绑定快照的题集文件；评测计划和漏测项输出到终端。"""
+    try:
+        repository_profile = inspect_repository(repository, ref)
+        plan = plan_repository(repository_profile, RepositoryPlanInput(
+            cases=cases, seed=seed, attempts=attempts, concurrency=concurrency))
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("x", encoding="utf-8") as stream:
+            stream.write(json.dumps(plan["suite"], ensure_ascii=False, indent=2) + "\n")
+        typer.echo(canonical(plan))
+    except FileExistsError:
+        raise typer.BadParameter("输出文件已存在，请选择新文件名。") from None
+    except (ValueError, OSError):
+        raise typer.BadParameter("无法规划题集；检查仓库路径、ref、扫描限制和输出路径。") from None
 
 
 @app.command("assessments")

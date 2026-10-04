@@ -4,10 +4,12 @@ import json
 import secrets
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from itertools import groupby
 from pathlib import Path
 
 from .assessment_contracts import AssessmentSuite, TargetDefinition, TargetRequest
+from .assessment_quality import quality_summary
 from .assessment_store import AssessmentStore
 from .profiles import evaluate_profile
 from .repositories import inspect_repository
@@ -35,6 +37,9 @@ def engine_hash():
         "repository_jobs.py",
         "repository_contracts.py",
         "repository_process.py",
+        "source_tools.py",
+        "repository_planning.py",
+        "assessment_quality.py",
     )
     root = Path(__file__).parent
     return digest({name: digest((root / name).read_bytes()) for name in modules})
@@ -64,13 +69,15 @@ def public_target(target: TargetDefinition):
     }
 
 
-def prepare_assessment(db: AssessmentStore, target: TargetDefinition, suite: AssessmentSuite):
-    repository = None
-    if target.repository:
+def prepare_assessment(db: AssessmentStore, target: TargetDefinition, suite: AssessmentSuite, *, repository=None):
+    # RepositoryManager may supply the snapshot it just read from its immutable checkout.
+    if target.repository and repository is None:
         repository = db.save_repository(
             inspect_repository(Path(target.repository), target.ref, target.repository_url)
         )
     claims = {c["id"] for c in repository["claims"]} if repository else set()
+    if suite.repository_source_hash and (not repository or repository["source_hash"] != suite.repository_source_hash):
+        raise ValueError("题集绑定的源码已改变；请重新扫描并生成评测计划。")
     files = {f["path"]: f for f in repository["files"]} if repository else {}
     for case in suite.cases:
         if any(c not in claims for c in case.claim_ids):
@@ -95,6 +102,8 @@ def prepare_assessment(db: AssessmentStore, target: TargetDefinition, suite: Ass
         "results": [],
         "curves": [],
         "claims": [],
+        "concurrency": suite.concurrency,
+        "quality": quality_summary([], suite, repository),
         "error": None,
         "deployment": None,
         "started_at": None,
@@ -339,6 +348,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
 def _summarize(body, suite, repository):
     rows = body["results"]
     body["completed"] = len(rows)
+    body["quality"] = quality_summary(rows, suite, repository)
     body["curves"] = []
     for budget in suite.budgets:
         selected = [r for r in rows if r["budget_id"] == budget.id]
@@ -384,6 +394,53 @@ def _summarize(body, suite, repository):
             body["claims"].append({**claim, "assessment_status": status, "case_ids": sorted(case_ids)})
 
 
+def _scheduled_cases(store, client, job_id, suite, repository, cancelled):
+    """Bounded in-flight work; memory/multi-turn cases form serial barriers."""
+    def serial(item):
+        case, _, _ = item
+        return len(case.turns) > 1 or case.category in {"memory", "session_isolation"}
+
+    work = ((case, budget, attempt) for budget in suite.budgets for case in suite.cases
+            for attempt in range(1, suite.attempts + 1))
+
+    def execute(item):
+        case, budget, attempt = item
+        return _case(store, client, job_id, suite, case, budget, attempt, repository, cancelled)
+
+    with ThreadPoolExecutor(max_workers=suite.concurrency, thread_name_prefix="assessment-case") as pool:
+        for is_serial, group in groupby(work, serial):
+            if cancelled():
+                return
+            if is_serial or suite.concurrency == 1:
+                for item in group:
+                    if cancelled():
+                        return
+                    yield execute(item)
+                continue
+            pending = set()
+            exhausted, failed = False, False
+            while pending or not exhausted:
+                while not exhausted and not failed and not cancelled() and len(pending) < suite.concurrency:
+                    item = next(group, None)
+                    if item is None:
+                        exhausted = True
+                    else:
+                        pending.add(pool.submit(execute, item))
+                if not pending:
+                    break
+                ready, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for future in ready:
+                    try:
+                        result = future.result()
+                    except Exception:
+                        # Drain and persist other already-started cases before failing the job.
+                        failed = True
+                    else:
+                        yield result
+            if failed:
+                raise RuntimeError("assessment_case_failed")
+
+
 def run_assessment(db, job_id, target, suite, repository=None, *, transport=None, cancel_check=None):
     if not db.claim(job_id):
         return db.job(job_id)
@@ -405,22 +462,13 @@ def run_assessment(db, job_id, target, suite, repository=None, *, transport=None
             if target.health_path and not target.deployment:
                 body["health"] = client.health()
             db.update(job_id, body)
-            for budget in suite.budgets:
-                for case in suite.cases:
-                    for attempt in range(1, suite.attempts + 1):
-                        if cancelled():
-                            state = "cancelled"
-                            break
-                        result = _case(
-                            db.store, client, job_id, suite, case, budget, attempt, repository, cancelled
-                        )
-                        body["results"].append(result)
-                        _summarize(body, suite, repository)
-                        db.update(job_id, body)
-                    if state == "cancelled":
-                        break
-                if state == "cancelled":
-                    break
+            order = {case.id: index for index, case in enumerate(suite.cases)}
+            budgets = {budget.id: index for index, budget in enumerate(suite.budgets)}
+            for result in _scheduled_cases(db.store, client, job_id, suite, repository, cancelled):
+                body["results"].append(result)
+                body["results"].sort(key=lambda r: (budgets[r["budget_id"]], order[r["case_id"]], r["attempt"]))
+                _summarize(body, suite, repository)
+                db.update(job_id, body)
     except TargetError as exc:
         state, body["error"] = "failed", exc.code
     except Exception:
@@ -532,6 +580,28 @@ def assessment_markdown(job):
         lines.append(
             f"|{curve['budget']['id']}|{curve['pass']}|{curve['fail']}|{curve['unknown']}|{curve['pass_rate']}%|{curve['mean_duration_ms']}|{tokens}|{cost}|"
         )
+    if job.get("quality"):
+        quality = job["quality"]
+        lines += ["", "## 维度覆盖与质量", "",
+                  f"案例并发上限：{job.get('concurrency', 1)}；多轮/记忆/隔离案例串行。", "",
+                  "|维度 / 预算|完成 / 计划|通过 / 失败 / 未知|通过率范围|p50 / p95 ms|",
+                  "|---|---:|---:|---:|---:|"]
+        for row in quality["dimensions"]:
+            lines.append(f"|{row['category']} / {row['budget_id']}|{row['observed']} / {row['planned']}|"
+                         f"{row['pass']} / {row['fail']} / {row['unknown']}|"
+                         f"{row['confirmed_pass_rate']}%–{row['possible_pass_rate']}%|"
+                         f"{row['p50_duration_ms']} / {row['p95_duration_ms']}|")
+        lines += ["", "### 重复稳定性", ""]
+        for row in quality["stability"]:
+            lines.append(f"- {row['case_id']} / {row['budget_id']}：{row['status']}，"
+                         f"{row['observed']}/{row['planned']}；runs={','.join(row['run_ids'])}")
+        lines += ["", "### 源码覆盖与漏测", ""]
+        for gap in quality["source_coverage"]:
+            lines.append(f"- {gap['kind']} {gap['name']}：{gap['status']}；{gap['path']}:{gap['line']}")
+        evidence = quality["evidence"]
+        lines += ["", f"- Token 已知的运行：{evidence['token_known_runs']}/{evidence['planned_runs']}",
+                  f"- 未知的必需检查：{evidence['unknown_required_checks']}/{evidence['required_checks']}"]
+        lines += [f"- {v}" for v in quality["limitations"]]
     lines += ["", "## 独立任务验收与源码线索", ""]
     for result in job["results"]:
         lines += [

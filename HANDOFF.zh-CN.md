@@ -1,5 +1,15 @@
 # Agent_Inspect 开发交接
 
+## 已知源码评测增强（2026-10-05）
+
+新增 `source_tools.py`、`repository_planning.py`、`assessment_quality.py`。源码档案含 Python 工具候选和能力线索；`plan-repository` CLI、`/api/assessment-suites/plan/{repository_id}`、网页源码模板输出绑定 source hash 的受控题集和漏测项。仓库自动部署通过 `planning` / `--source-plan` 启用，导出包保存完整计划，固定 checkout 档案只扫描一次。
+
+Suite 增加 `concurrency`（默认 1，上限 4）和可选 `repository_source_hash`；独立案例并发，多轮/记忆/隔离案例串行屏障，取消保留已开始的结果。报告新增维度通过率范围、分位耗时、重复稳定性、未知证据计数和源码工具/声明覆盖。通过率范围不是置信区间；静态候选和通用题不认证完整能力声明。
+
+使用和边界见 [docs/SOURCE_GUIDED_ASSESSMENT.zh-CN.md](docs/SOURCE_GUIDED_ASSESSMENT.zh-CN.md)。后文“尚未根据仓库生成题目”的描述是旧阶段记录；本轮实现确定性受控规划，仍未提供任意业务工具的可靠答案自动推断、官方基准成绩或通用零配置部署。
+
+验收见 [SOURCE_GUIDED_VALIDATION.zh-CN.md](SOURCE_GUIDED_VALIDATION.zh-CN.md)：345 passed、2 skipped；Chrome 3 passed，含新流程与移动宽度；wheel/Skill 已刷新。未发生付费调用，本地 `.env` 未读取或改动。
+
 更新日期：2026-10-04（仓库自动拉取、部署、评测首版完成）。历史专项记录保留各自当时的验证范围，当前状态以本节及 Task 4 为准。
 
 本轮新增：主动评测模型/工具遥测已接入，包括逐次 Token、参数/结果、状态、耗时、任务关联、失败保存、统计和网页展示。根目录 `.env` 实际配置及 DeepSeek `/models` 已验证，真实单题 1/1 pass，2 次模型请求、calculator/final_answer 两次工具入口、3265 Token；没有凭据泄露。接入指南见 [TARGET_TELEMETRY](docs/TARGET_TELEMETRY.zh-CN.md)，验证及运行 ID 见 [验收记录](TARGET_TELEMETRY_VALIDATION.zh-CN.md)。启动前重启旧版目标与评审服务，新任务才会采集内部记录。

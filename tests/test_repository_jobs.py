@@ -303,6 +303,32 @@ def test_pipeline_freezes_build_and_suite_preserves_bundle_and_cleans(pipeline):
     assert bundle["logs"][0]["text"] == "fixture Docker build complete"
 
 
+def test_pipeline_source_plan_is_frozen_exported_and_scans_once(pipeline, monkeypatch):
+    import agent_trace_review.repository_jobs as jobs
+
+    original = jobs.inspect_repository
+    calls = []
+
+    def inspect(*args):
+        calls.append(args)
+        return original(*args)
+
+    def unexpected(*args):
+        raise AssertionError("immutable source should not be scanned twice")
+
+    monkeypatch.setattr(jobs, "inspect_repository", inspect)
+    monkeypatch.setattr("agent_trace_review.assessments.inspect_repository", unexpected)
+    request = RepositoryAssessmentInput(repository_url=URL, planning={"cases": 2, "concurrency": 2})
+    job = pipeline.db.create(request)
+    result = pipeline.run(job["id"])
+    assert result["state"] == "completed", result
+    bundle = pipeline.bundle(job["id"])
+    assert len(calls) == 1
+    assert bundle["assessment_plan"]["suite"] == bundle["assessment"]["suite"]
+    assert bundle["assessment_plan"]["source_hash"] == bundle["assessment"]["job"]["source_hash"]
+    assert bundle["assessment"]["job"]["concurrency"] == 2
+
+
 def test_pipeline_build_failure_keeps_logs_and_no_assessment(pipeline, monkeypatch):
     def fail(*args, **kwargs):
         raise RepositoryError("command_failed", "compiler failure fixture")

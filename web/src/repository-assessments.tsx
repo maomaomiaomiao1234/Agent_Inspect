@@ -34,6 +34,7 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
   const [environment, setEnvironment] = useState("");
   const [cases, setCases] = useState(12);
   const [seed, setSeed] = useState(42);
+  const [sourcePlanning, setSourcePlanning] = useState(false);
   const [suite, setSuite] = useState<unknown>(null);
   const [suiteName, setSuiteName] = useState("");
   const [jobs, setJobs] = useState<RepositoryJob[]>([]);
@@ -69,7 +70,8 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
       }
       await api<RepositoryJob>("/repository-jobs", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repository_url: url.trim(), ref, recipe, manifest_path: manifest, backend,
-          environment: mappings, suite, generation: { template: "smolagents", cases, seed } }) });
+          environment: mappings, suite, planning: sourcePlanning && !suite ? { cases, seed } : null,
+          generation: { template: "smolagents", cases, seed } }) });
       setRefresh(v => v + 1);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
@@ -100,6 +102,10 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
           </select></label>
           <label>生成案例数<input type="number" min="1" max="30" value={cases} onChange={e => setCases(Number(e.target.value))} /></label>
           <label>生成种子<input type="number" min="0" max="2147483647" value={seed} onChange={e => setSeed(Number(e.target.value))} /></label>
+          <label>题集策略<select aria-label="题集策略" value={sourcePlanning ? "source" : "template"}
+            onChange={e => setSourcePlanning(e.target.value === "source")}>
+            <option value="template">使用仓库声明的模板</option><option value="source">根据源码规划受控测试</option>
+          </select></label>
           <label>独立题集（可选）<input aria-label="仓库独立题集" type="file" accept=".json,application/json" onChange={async e => {
             const file = e.target.files?.[0]; setSuite(null); setSuiteName(""); setError("");
             if (!file) return;
@@ -109,7 +115,9 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
             } catch (e) { setError((e as Error).message); }
           }} /></label>
         </div>
-        <p>{suiteName ? `将使用：${suiteName}` : "未上传题集时，smolagents 或清单声明的 smolagents 模板由评审端独立生成答案。"}</p>
+        <p>{suiteName ? `将使用：${suiteName}` : sourcePlanning
+          ? "将根据固定提交生成题集和漏测清单。目标须支持题目的 JSON 输出；离线 smolagents 校准模型不支持通用题目。"
+          : "未上传题集时，smolagents 或清单声明的 smolagents 模板由评审端独立生成答案。"}</p>
         <label className="repository-environment">运行期环境变量映射<textarea aria-label="运行期环境变量映射" rows={3} value={environment}
           placeholder="SMOL_MODEL_API_KEY=MY_MODEL_KEY" onChange={e => setEnvironment(e.target.value)} /></label>
         <p>仅填写名称，密钥保留在服务端。允许的宿主变量：{capabilities.allowed_environment.join("、") || "未配置"}。</p>

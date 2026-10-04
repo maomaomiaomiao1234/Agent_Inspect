@@ -24,6 +24,10 @@ def main():
     thread.start()
     try:
         with tempfile.TemporaryDirectory(prefix="assessment-ui-test-") as temp:
+            planning_source = Path(temp) / "planning-source"
+            planning_source.mkdir()
+            (planning_source / "README.md").write_text("Fixture agent with memory and RAG retrieval.\n")
+            (planning_source / "tools.py").write_text("@tool\ndef search(query: str): pass\n")
             registry = Path(temp) / "targets.json"
             targets = [
                 {"id": "control" if mode == "correct" else mode,
@@ -31,6 +35,8 @@ def main():
                  "task_path": "/" + mode, "health_path": "/health", "demo": True}
                 for mode in ("correct", "incorrect", "noop", "missing", "leaky")
             ]
+            targets.append({"id": "source-planning-control", "endpoint": f"http://127.0.0.1:{server.server_port}",
+                            "repository": str(planning_source), "task_path": "/incorrect", "demo": True})
             if args.telemetry_target:
                 targets.append({"id": "smolagents-offline", "endpoint": args.telemetry_target,
                                 "health_path": "/health", "demo": True})
