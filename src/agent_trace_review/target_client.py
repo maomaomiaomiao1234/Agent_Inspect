@@ -93,7 +93,12 @@ class TargetClient:
             raise TargetError("request_too_large")
         raw = asyncio.run(self._exchange("POST", self.target.task_path, payload, timeout))
         try:
-            return TargetResponse.model_validate(scrub(raw, self.secrets))
+            response = TargetResponse.model_validate(scrub(raw, self.secrets))
+            if response.trace and (
+                response.trace.session_id != payload["session_id"] or response.trace.turn != payload["turn"]
+            ):
+                raise ValueError("Target trace does not match the requested session/turn")
+            return response
         except ValueError:
             raise TargetError("invalid_target_contract") from None
 

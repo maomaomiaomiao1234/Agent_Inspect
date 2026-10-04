@@ -2,6 +2,8 @@
 
 更新日期：2026-10-04（仓库自动拉取、部署、评测首版完成）。历史专项记录保留各自当时的验证范围，当前状态以本节及 Task 4 为准。
 
+本轮新增：主动评测模型/工具遥测已接入，包括逐次 Token、参数/结果、状态、耗时、任务关联、失败保存、统计和网页展示。根目录 `.env` 实际配置及 DeepSeek `/models` 已验证，真实单题 1/1 pass，2 次模型请求、calculator/final_answer 两次工具入口、3265 Token；没有凭据泄露。接入指南见 [TARGET_TELEMETRY](docs/TARGET_TELEMETRY.zh-CN.md)，验证及运行 ID 见 [验收记录](TARGET_TELEMETRY_VALIDATION.zh-CN.md)。启动前重启旧版目标与评审服务，新任务才会采集内部记录。
+
 ## 0. 当前状态
 
 - **Task 1 已完成：** OpenCode 轨迹的三个合成场景、CLI/API、网页、报告及验证。
@@ -12,8 +14,8 @@
 - **自动生成题集已完成：** smolagents 模板按种子生成 1–30 个案例、程序标准答案与 Profile；网页可预览/下载并直接评测，CLI/API 同样可生成。最大 30 题的真实框架 offline 校准通过；未新增 DeepSeek 调用。
 - **仓库自动部署评测首版已完成：** CLI/API/网页接收公开 GitHub HTTPS URL，固定提交，按内置 smolagents 配方或 `agent-review.json` 构建实际源码，健康检查后执行独立题集，导出构建和评测证据并清理资源。实际仅提供 smolagents URL 的默认流程为 12/12 pass，offline/demo；不代表模型能力成绩。操作与边界见 [指南](docs/REPOSITORY_ASSESSMENT.zh-CN.md)，真实构建、崩溃恢复与回归证据见 [验收记录](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)。
 - **此前审核的三个问题已修复：** 容器身份与临时环境文件持久化并在重启时回收；多轮历史接受 JSON 输出；用量不完整时仍扣除已知 Token 并判定已知超额。构建子进程随父进程异常退出而终止，同一数据目录禁止并发启动两个服务。
-- 本目录仍**没有 `.git`**，磁盘源码是当前工作副本。GitHub 仓库已配置并发布此前实现：`git@github.com:maomaomiaomiao1234/Agent_Inspect.git`；提交操作使用独立临时克隆，迁移可克隆远端或保留当前文件。
-- 最新后端测试 **310 passed / 2 warnings**，smolagents 独立适配层 **9 passed**；Ruff 和前端构建通过；本轮 Chrome 主动评测、生成下载及仓库入口 **4 passed**，移动端布局调整后仓库入口 **2 passed** 再验证。此前全量浏览器 **7 passed / 1 skipped** 和认证主动评测 **1 passed** 属于当时验证范围。
+- 当前目录已有 `.git`，本轮实现基线为远端 main `d51fb151a57356ff857a127ae37b5719a2f1e473`。仓库：`git@github.com:maomaomiaomiao1234/Agent_Inspect.git`。
+- 本轮后端 **326 passed / 2 skipped / 2 warnings**（可选 PDF/Scout 检查跳过），smolagents 独立适配层 **11 passed**；Ruff 和前端构建通过；Chrome 主动评测、生成下载和遥测 **3 passed**。此前仓库入口、真实 Docker 和认证浏览器验证保留在各自记录中。
 - 网页、0.3.0 wheel 和 skill 内置引擎均已重建并验证。包版本未变，启动器以内容哈希区分不同构建，主动评测记录另有执行器源码哈希。
 - 未修改原有 `.agent-review/`。实现和验证使用独立临时数据目录。
 

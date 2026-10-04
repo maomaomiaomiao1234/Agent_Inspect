@@ -7,13 +7,17 @@ type GeneratedSuite = { id: string; description: string; cases: { id: string; tu
 type Source = { path: string; line: number; url?: string };
 type Claim = Source & { id: string; capability: string; snippet: string; assessment_status?: string };
 type Repository = { id: string; commit: string | null; snapshot_kind: string; files: unknown[]; claims: Claim[]; limitations: string[] };
+type Telemetry = { coverage: "complete" | "partial" | "unavailable"; llm_calls: number | null; tool_calls: number | null;
+  llm_errors: number | null; tool_errors: number | null; llm_duration_ms: number | null; tool_duration_ms: number | null;
+  models: { model: string; calls: number; tokens: { input: number | null; output: number | null; total: number | null }; duration_ms: number | null }[] };
 type Job = {
   id: string; state: string; target_id: string; suite_id: string; planned: number; completed: number;
   commit: string | null; repository_id: string | null; error: string | null; demo: boolean;
   curves: { budget: { id: string }; pass: number; fail: number; unknown: number; pass_rate: number;
     mean_duration_ms: number | null; reported_total_tokens: number | null; reported_cost_usd: number | null }[];
   results: { case_id: string; budget_id: string; attempt: number; outcome: string; run_id: string;
-    execution_state: string; error: string | null; source_evidence: Source[] }[];
+    execution_state: string; error: string | null; source_evidence: Source[]; telemetry?: Telemetry;
+    usage?: { input_tokens?: number | null; output_tokens?: number | null; total_tokens: number | null } }[];
   claims: Claim[]; limitations: string[];
 };
 
@@ -22,6 +26,13 @@ const stateLabel: Record<string, string> = { queued: "排队中", running: "执�
 const outcomeLabel: Record<string, string> = { pass: "通过", fail: "失败", inconclusive: "证据不足" };
 const claimLabel: Record<string, string> = { untested: "未测试", supported_for_cases: "这些案例支持声明",
   contradicted_by_cases: "有案例未满足声明", inconclusive: "证据不足" };
+
+function callCount(value: number | null | undefined, telemetry?: Telemetry) {
+  return value == null ? "未知" : `${telemetry?.coverage === "complete" ? "" : "≥"}${value}`;
+}
+function callTime(value: number | null | undefined, telemetry?: Telemetry) {
+  return value == null ? "未知" : `${telemetry?.coverage === "complete" ? "" : "≥"}${value.toFixed(2)} ms`;
+}
 
 function SourceLink({ source }: { source: Source }) {
   return source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.path}:{source.line}</a>
@@ -161,6 +172,7 @@ export function Assessments() {
           await api(`/assessments/${job.id}/cancel`, { method: "POST" }); setRefresh(x => x + 1);
         })}>取消评测</button>}
         <DownloadLink path={`/assessments/${job.id}/export`}>导出评测报告</DownloadLink>
+        <DownloadLink path={`/assessments/${job.id}/export?format=json`}>导出评测 JSON</DownloadLink>
         <DownloadLink path={`/assessments/${job.id}/export?format=bundle`}>导出证据包</DownloadLink>
       </div></div>
       <p>{stateLabel[job.state]} · {job.completed}/{job.planned} · 源码提交：<code>{job.commit || "未知"}</code></p>
@@ -169,6 +181,26 @@ export function Assessments() {
         <tbody>{job.curves.map(c => <tr key={c.budget.id}><td>{c.budget.id}</td><td>{c.pass}</td><td>{c.fail}</td><td>{c.unknown}</td>
           <td>{c.pass_rate}%</td><td>{c.mean_duration_ms == null ? "未知" : `${(c.mean_duration_ms / 1000).toFixed(2)} 秒`}</td><td>{c.reported_total_tokens ?? "未知"}</td></tr>)}</tbody></table></div>
       <p className="scenario-note">未知和未完成的案例保留在通过率分母中。耗时包含评审端开销；Token 与费用没有目标自报时保持未知。</p>
+      <h3>模型与工具调用</h3>
+      <p className="scenario-note">内部记录由目标自报。≥ 表示部分记录的可见下界；未知表示未采集。
+        工具计数包含 final_answer；调用耗时之和可能包含并发重叠。点击“查看对话和验收”可查看逐次调用的参数、结果和状态。</p>
+      <div className="assessment-table"><table aria-label="模型与工具调用统计"><thead><tr>
+        <th>案例 / 预算 / 次数</th><th>输入 Token</th><th>输出 Token</th><th>总 Token</th>
+        <th>模型调用</th><th>工具调用</th><th>模型错误 / 工具错误</th><th>模型耗时 / 工具耗时</th><th>覆盖范围</th>
+      </tr></thead><tbody>{job.results.map(r => <tr key={r.run_id}>
+        <td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td>{r.usage?.input_tokens ?? "未知"}</td>
+        <td>{r.usage?.output_tokens ?? "未知"}</td><td>{r.usage?.total_tokens ?? "未知"}</td>
+        <td>{callCount(r.telemetry?.llm_calls, r.telemetry)}</td><td>{callCount(r.telemetry?.tool_calls, r.telemetry)}</td>
+        <td>{callCount(r.telemetry?.llm_errors, r.telemetry)} / {callCount(r.telemetry?.tool_errors, r.telemetry)}</td>
+        <td>{callTime(r.telemetry?.llm_duration_ms, r.telemetry)} / {callTime(r.telemetry?.tool_duration_ms, r.telemetry)}</td>
+        <td>{r.telemetry?.coverage === "complete" ? "目标声明完整" : r.telemetry?.coverage === "partial" ? "部分" : "未采集"}</td>
+      </tr>)}</tbody></table></div>
+      {job.results.some(r => !!r.telemetry?.models.length) && <details><summary>按模型查看用量</summary>
+        <ul>{job.results.flatMap(r => (r.telemetry?.models || []).map(m => <li key={`${r.run_id}-${m.model}`}>
+          {r.case_id} / {r.budget_id} / {r.attempt} · {m.model} · {callCount(m.calls, r.telemetry)} 次 ·
+          输入 {callCount(m.tokens.input, r.telemetry)} / 输出 {callCount(m.tokens.output, r.telemetry)} Token · {callTime(m.duration_ms, r.telemetry)}
+        </li>))}</ul>
+      </details>}
       <div className="assessment-table"><table><thead><tr><th>案例 / 预算 / 次数</th><th>验收</th><th>执行</th><th>源码线索</th><th>证据</th></tr></thead>
         <tbody>{job.results.map(r => <tr key={r.run_id}><td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td>{outcomeLabel[r.outcome]}</td>
           <td>{r.execution_state}{r.error ? ` · ${r.error}` : ""}</td><td>{r.source_evidence.map((s, i) => <div key={i}><SourceLink source={s} /></div>)}</td>

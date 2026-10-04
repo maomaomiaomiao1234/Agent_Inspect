@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from agent_server import AgentTarget, create_app  # noqa: E402
+from agent_server import AgentTarget, OfflineToolModel, create_app  # noqa: E402
 
 
 def request(prompt, session="example", turn=0, **extra):
@@ -42,6 +42,13 @@ def test_arithmetic_uses_real_framework_tools_and_observations(client):
     assert execution["tools"][0]["tool"] == "calculator"
     assert execution["tools"][0]["output"] == {"answer": 41}
     assert "usage" not in body  # No invented inference Token or zero cost.
+    trace = body["trace"]
+    assert trace["session_id"] == "example" and trace["turn"] == 0 and trace["coverage"] == "complete"
+    assert [e["kind"] for e in trace["events"]] == ["llm", "tool", "llm", "tool"]
+    assert [e["tool"] for e in trace["events"] if e["kind"] == "tool"] == ["calculator", "final_answer"]
+    assert all(e["duration_ms"] >= 0 and e["status"] == "completed" for e in trace["events"])
+    assert all(e["provenance"] == "target_reported" for e in trace["events"])
+    assert trace["events"][1]["parent_id"] == trace["events"][0]["id"]
 
 
 def test_two_step_calculation_uses_intermediate_tool_result(client):
@@ -157,6 +164,13 @@ def test_real_sdk_http_tool_loop_reports_each_turn_usage_without_double_counting
                 assert body["output"]["echo"] == "[REDACTED]"
                 assert body["usage"]["tokens"] == {"input": 20, "output": 10, "total": 30}
                 assert "cost_usd" not in body["usage"]
+                trace = body["trace"]
+                assert trace["turn"] == turn
+                model_calls = [e for e in trace["events"] if e["kind"] == "llm"]
+                assert len(model_calls) == 2
+                assert sum(e["usage"]["tokens"]["total"] for e in model_calls) == 30
+                assert all(e["model"] == "local-fixture" for e in model_calls)
+                assert 'fixture-key-with-quote"' not in json.dumps(body)
         assert len(requests) == 4
         assert requests[0]["model"] == "local-fixture"
         assert requests[1]["max_tokens"] == 1019
@@ -216,3 +230,59 @@ def test_deepseek_sdk_requests_disable_thinking_for_required_tool_calls(monkeypa
         assert response.json()["output"]["answer"] == 19
         assert response.json()["output"]["_execution"]["model_calls"] == 2
     assert len(requests) == 2
+
+
+def test_failed_tool_attempt_is_recorded_and_agent_can_recover(monkeypatch):
+    target = AgentTarget()
+    original = target.new_session
+
+    class RecoveringModel(OfflineToolModel):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def generate(self, messages, **kwargs):
+            from smolagents.models import ChatMessage, ChatMessageToolCall, ChatMessageToolCallFunction, MessageRole
+            self.calls += 1
+            if self.calls <= 2:
+                name, args = "calculator", {"a": 1, "b": 2, "operation": "divide" if self.calls == 1 else "add"}
+            else:
+                name, args = "final_answer", {"answer": {"answer": 3}}
+            return ChatMessage(role=MessageRole.ASSISTANT, content="hidden-reasoning-fixture", tool_calls=[
+                ChatMessageToolCall(id=f"call-{self.calls}", type="function",
+                                    function=ChatMessageToolCallFunction(name=name, arguments=args)),
+            ])
+
+    def session():
+        instance = original()
+        instance.model.backend = RecoveringModel()
+        return instance
+    monkeypatch.setattr(target, "new_session", session)
+    with TestClient(create_app(target)) as client:
+        body = client.post("/task", json=request("Compute 1 + 2.")).json()
+    assert body["output"]["answer"] == 3
+    tools = [e for e in body["trace"]["events"] if e["kind"] == "tool"]
+    assert [e["status"] for e in tools] == ["error", "completed", "completed"]
+    assert tools[0]["output"] == {"error_type": "ValueError"}
+    assert "hidden-reasoning-fixture" not in json.dumps(body)
+
+
+def test_failed_model_preserves_trace_without_provider_exception_content(monkeypatch):
+    target = AgentTarget(api_key="private-fixture-key")
+    original = target.new_session
+    def fail(*args, **kwargs):
+        raise RuntimeError("private-fixture-key and sensitive-provider-body")
+    def session():
+        instance = original()
+        instance.model.backend.generate = fail
+        return instance
+    monkeypatch.setattr(target, "new_session", session)
+    with TestClient(create_app(target)) as client:
+        response = client.post("/task", json=request("Compute 1 + 2."))
+        assert response.status_code == 200
+        body = response.json()
+        assert body["execution_status"] == "error" and body["error"] == "agent_execution_failed"
+        assert body["output"] is None and body["trace"]["events"]
+        assert all(e["kind"] == "llm" and e["status"] == "error" for e in body["trace"]["events"])
+        assert "private-fixture-key" not in response.text and "sensitive-provider-body" not in response.text
+        assert "usage" not in body

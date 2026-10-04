@@ -15,6 +15,7 @@ from .service import ingest
 from .service_lock import ServiceLock
 from .storage import Store
 from .target_client import TargetClient, TargetError, deployed_target, scrub
+from .target_telemetry import telemetry_summary, trace_events
 from .util import canonical, digest, now
 
 
@@ -24,6 +25,7 @@ def engine_hash():
         "assessment_contracts.py",
         "assessment_store.py",
         "target_client.py",
+        "target_telemetry.py",
         "repositories.py",
         "profiles.py",
         "generic.py",
@@ -101,7 +103,7 @@ def prepare_assessment(db: AssessmentStore, target: TargetDefinition, suite: Ass
         "limitations": [
             "输出验收只覆盖固定 Suite；自适应出题和官方基准成绩尚未实现。",
             "目标服务与源码版本的绑定未认证；健康检查中的 commit 属于目标自报。",
-            "HTTP 记录只观察外部对话，没有目标内部工具轨迹；源码关联不证明故障原因。",
+            "外部对话由评审端观察；内部模型/工具轨迹由目标自报，未接入的调用不可见，源码关联不证明原因。",
             "Token/费用由目标自报；max_output_tokens 为请求约束，未强制供应商侧限额。",
             "每个 case/attempt/budget 使用新 session_id；会话隔离是否成立须由专项任务验证。",
         ],
@@ -162,6 +164,10 @@ def _usage(turns, budget, execution_complete=True):
         elif complete and all(v is not None for v in outputs):
             adherence = "pass" if sum(outputs) <= budget.max_output_tokens else "fail"
     return {
+        "input_tokens": sum((u["tokens"]["input"] for u in usages))
+        if complete and all(u["tokens"]["input"] is not None for u in usages) else None,
+        "output_tokens": sum((u["tokens"]["output"] for u in usages))
+        if complete and all(u["tokens"]["output"] is not None for u in usages) else None,
         "total_tokens": total_tokens,
         "cost_usd": cost,
         "provenance": "target_reported",
@@ -206,6 +212,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
             budget=request_budget,
         ).model_dump()
         sent = time.time() * 1000
+        sent_mono = time.monotonic()
         events.append(
             {
                 "id": f"user_{index}",
@@ -214,6 +221,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
                 "output": turn.prompt,
                 "status": "completed",
                 "start_ms": sent,
+                "provenance": "host_observed",
             }
         )
         try:
@@ -230,10 +238,12 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
                     "status": "error",
                     "start_ms": sent,
                     "end_ms": time.time() * 1000,
+                    "provenance": "host_observed",
                 }
             )
             break
         ended = time.time() * 1000
+        trace = response.trace.model_dump() if response.trace else None
         messages.append({"role": "assistant", "content": response.output})
         turns.append(
             {
@@ -241,23 +251,33 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
                 "request": scrub(request, client.secrets),
                 "output": response.output,
                 "usage": response.usage.model_dump() if response.usage else None,
-                "latency_ms": round(ended - sent, 3),
+                "latency_ms": round((time.monotonic() - sent_mono) * 1000, 3),
+                "trace": trace,
+                "execution_status": response.execution_status,
+                "error": response.error,
             }
         )
+        events.extend(trace_events(trace, job_id=job_id, case_id=case.id, session_id=session, turn=index))
         events.append(
             {
                 "id": f"assistant_{index}",
                 "kind": "message",
                 "role": "assistant",
                 "output": response.output,
-                "status": "completed",
+                "status": "completed" if response.execution_status == "completed" else "error",
                 "start_ms": sent,
                 "end_ms": ended,
+                "provenance": "host_observed",
+                "duration_ms": turns[-1]["latency_ms"],
             }
         )
+        if response.execution_status == "error":
+            state, error = "error", response.error
+            break
     if cancelled():
         state, error = "cancelled", "cancel_requested"
     sources = _sources(case, repository)
+    telemetry = telemetry_summary(turns, state == "completed")
     metadata = {
         "job_id": job_id,
         "suite_hash": digest(suite.model_dump()),
@@ -268,6 +288,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         "execution_state": state,
         "error": error,
         "turns": turns,
+        "telemetry": telemetry,
         "source_evidence": sources,
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "repository_id": repository["id"] if repository else None,
@@ -281,7 +302,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         "task_prompt": "\n\n".join(t.prompt for t in case.turns),
         "events": events,
         "status": state,
-        "coverage": "partial",
+        "coverage": "complete" if telemetry["coverage"] == "complete" else "partial",
         "demo": client.target.demo,
         "start_ms": start_wall,
         "end_ms": time.time() * 1000,
@@ -309,6 +330,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         "error": error,
         "duration_ms": round((time.monotonic() - started) * 1000, 3),
         "usage": _usage(turns, budget, state == "completed"),
+        "telemetry": telemetry,
         "source_evidence": sources,
         "checks": evaluation.custom["checks"],
     }
@@ -520,6 +542,18 @@ def assessment_markdown(job):
         ]
         for check in result["checks"]:
             lines.append(f"- {check['id']}：{check['status']} · {check['explanation']}")
+        usage = result.get("usage", {})
+        telemetry = result.get("telemetry", {})
+        def display(value):
+            return "未知" if value is None else value
+        lines += [
+            f"- 自报 Token：输入 {display(usage.get('input_tokens'))}；输出 {display(usage.get('output_tokens'))}；总计 {display(usage.get('total_tokens'))}",
+            f"- 自报调用：模型 {display(telemetry.get('llm_calls'))}；工具 {display(telemetry.get('tool_calls'))}；覆盖 {telemetry.get('coverage', 'unavailable')}",
+            f"- 自报错误：模型 {display(telemetry.get('llm_errors'))}；工具 {display(telemetry.get('tool_errors'))}",
+            f"- 自报调用耗时合计 ms：模型 {display(telemetry.get('llm_duration_ms'))}；工具 {display(telemetry.get('tool_duration_ms'))}",
+        ]
+        for model in telemetry.get("models", []):
+            lines.append(f"- 模型 {model['model']}：{model['calls']} 次；Token {display(model['tokens']['total'])}；耗时 {display(model['duration_ms'])} ms")
         for source in result["source_evidence"]:
             location = f"{source['path']}:{source['line']}"
             if source.get("url"):
@@ -531,7 +565,10 @@ def assessment_markdown(job):
         lines.append(
             f"- {claim['id']} / {claim['capability']}：{claim['assessment_status']}；{claim['path']}:{claim['line']}"
         )
-    lines += ["", "## 可复现材料与限制", "", f"- Suite 工件：{job['suite_artifact']}"]
+    lines += ["", "## 可复现材料与限制", "", f"- Suite 工件：{job['suite_artifact']}",
+              "- 内部调用与完整覆盖均由目标声明；partial 的计数是可见下界，未采集数据保持未知。",
+              "- final_answer 计入工具调用；逐次耗时可能重叠。汇总用量不与调用用量重复相加。",
+              "- 逐次调用的参数、结果、状态、耗时、Token 与 session/case/run 关联见证据包和运行轨迹。"]
     if job.get("build_provenance"):
         build = job["build_provenance"]
         lines += [f"- 源码构建：{build['repository_url']} @ {build['commit']}",

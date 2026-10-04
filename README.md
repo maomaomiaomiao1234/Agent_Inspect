@@ -4,6 +4,8 @@
 
 本项目支持扫描固定版本的开源仓库、向登记的 Agent 服务发起多轮任务、验证能力声明、检查会话隔离、比较预算与版本回归，并导出带证据的报告。已有 OpenCode/通用轨迹、代码修复和文档验收流程继续可用。
 
+主动评测支持逐次模型和工具记录：模型名、输入/输出 Token、工具参数/结果、状态、耗时与任务关联，接入工具规则和错误恢复诊断。smolagents 示例已加入采集，其他 Agent 可输出相同协议；接入方法、根目录 `.env` 的加载和缺失数据说明见 [调用记录指南](docs/TARGET_TELEMETRY.zh-CN.md)。
+
 **第一次使用，建议按这个顺序：启动网页 → 加载通过示例 → 查看结果和证据 → 导入自己的数据。** 基础体验无需 OpenCode、Docker 或 API Token。
 
 如果你的目标是「部署一个评审其他 Agent 的 Agent」，安装后直接看 [主动评测快速开始](#active-assessment)。也可使用 [仓库自动部署评测](docs/REPOSITORY_ASSESSMENT.zh-CN.md)：提交公开 GitHub 地址，自动接入 smolagents 或带部署清单的仓库，完成拉取、构建、部署和固定题集评测。
@@ -69,6 +71,44 @@ uv run agent-review serve --data-dir ./.agent-review --port 8765
 - 后面需要执行 CLI 命令时，另开一个终端并进入同一项目根目录。
 - 本文统一使用 `--data-dir ./.agent-review`。服务和导入命令必须指向同一数据目录，网页才能看到导入结果。
 - 下次使用只需重新运行启动命令；更新前端源码后再执行构建命令。
+
+### 配置 `.env`（需要模型或主动评测时）
+
+仓库提供了不含密钥的模板 [`.env.example`](.env.example)。复制到本机后再填写值：
+
+```sh
+cp .env.example .env
+chmod 600 .env
+```
+
+模板中的 DeepSeek 示例使用 `https://api.deepseek.com` 和 `deepseek-flash`。最小配置如下：
+
+```dotenv
+AGENT_REVIEW_LLM_API_URL=https://api.deepseek.com
+AGENT_REVIEW_LLM_MODEL=deepseek-flash
+AGENT_REVIEW_LLM_TOKEN=填写你的DeepSeek密钥
+
+SMOL_MODEL_API_BASE=https://api.deepseek.com
+SMOL_MODEL_ID=deepseek-flash
+SMOL_MODEL_API_KEY=填写你的DeepSeek密钥
+```
+
+`AGENT_REVIEW_LLM_*` 用于评审端的大模型评审，`SMOL_MODEL_*` 用于示例被测 Agent；两组变量不会自动互相读取，可以使用同一把密钥。主动评测目标清单可设置为 `AGENT_REVIEW_TARGETS=examples/smolagents/targets.model.json`。
+
+启动时显式加载 `.env`，因为项目不会自动把它注入每个进程：
+
+```sh
+uv run --env-file .env agent-review serve --data-dir ./.agent-review --port 8765
+```
+
+`.env`、真实 API Key、服务令牌和其他本地凭据禁止提交；提交前可检查：
+
+```sh
+git check-ignore -v .env
+git ls-files .env
+```
+
+第一条应显示 `.gitignore` 规则，第二条不应输出任何内容。只提交 `.env.example`，不要执行 `git add -f .env`。
 
 <a id="first-run"></a>
 ## 2. 跑通第一个示例

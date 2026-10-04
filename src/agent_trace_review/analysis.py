@@ -313,7 +313,22 @@ def analyze(run: Run) -> Evaluation:
         note="首个可见消息到最后回复完成；可能包含用户等待时间。",
     )
     refs = [e.evidence_id for e in tools]
-    metric("tool_calls", "工具调用", len(tools), refs)
+    call_status = "partial" if not coding and not run.trace_complete else "observed"
+    metric("tool_calls", "工具调用", len(tools), refs, status=call_status,
+           note="可见调用数量；部分轨迹不能证明未调用其他工具。")
+    llms = [e for e in run.events if e.kind == "llm"]
+    metric("llm_calls", "模型调用", len(llms) if llms or run.trace_complete else None,
+           [e.evidence_id for e in llms], status=call_status)
+    for key, label, calls in (("llm_duration_ms", "模型调用耗时合计", llms),
+                              ("tool_duration_ms", "工具调用耗时合计", tools)):
+        durations = [e.data.get("duration_ms") if e.data.get("duration_ms") is not None
+                     else e.end_ms - e.start_ms if e.start_ms is not None and e.end_ms is not None
+                     else None for e in calls]
+        known = [v for v in durations if v is not None]
+        metric(key, label, sum(known) if known else 0 if run.trace_complete and not calls else None,
+               [e.evidence_id for e in calls], unit="ms",
+               status="partial" if len(known) != len(calls) else call_status,
+               note="逐次调用耗时之和；并发调用可能重叠，不等于任务总耗时。")
     metric(
         "errors",
         "工具/模型错误",
@@ -389,7 +404,8 @@ def analyze(run: Run) -> Evaluation:
             round(sum(available), 8) if available else None,
             [u["evidence_id"] for u in run.usage],
             unit=unit,
-            status="partial" if len(available) != len(values) else "observed",
+            status="partial" if len(available) != len(values) or not coding and not run.trace_complete
+            else "observed",
             note=f"{run.framework} 报告值；不把缺失用量填为 0，不包含未导入子会话。"
             + (" 模型价格估算不等同实际账单。" if key == "cost_usd" else ""),
         )

@@ -26,6 +26,7 @@ artifacts = ["src/agent_trace_review/static/**"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "examples/smolagents/agent_server.py" = "agent_trace_review/repository_templates/smolagents_agent.py"
+"examples/smolagents/telemetry.py" = "agent_trace_review/repository_templates/smolagents_telemetry.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

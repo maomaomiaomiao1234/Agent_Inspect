@@ -21,8 +21,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from smolagents import Model, OpenAIModel, Tool, ToolCallingAgent
+from smolagents.default_tools import FinalAnswerTool
 from smolagents.models import ChatMessage, ChatMessageToolCall, ChatMessageToolCallFunction, MessageRole
 from smolagents.monitoring import LogLevel
+from telemetry import CallRecorder, RecordedTool
 
 UPSTREAM_COMMIT = "12c1bc820eca50ace6f80a21d90426d41d74f845"
 INSTRUCTIONS = """Use calculator for arithmetic, remember_code to store codes, and recall_code to recall them.
@@ -61,14 +63,11 @@ class TaskRequest(BaseModel):
 class ToolState:
     code: str = "NONE"
     calls: list[dict] = field(default_factory=list)
-
-    def record(self, name, arguments, output):
-        # Only public tool arguments/results; never export model reasoning or raw API responses.
-        self.calls.append({"tool": name, "arguments": arguments, "output": output})
-        return output
+    recorder: CallRecorder = field(default_factory=CallRecorder)
 
 
-class Calculator(Tool):
+class Calculator(RecordedTool, Tool):
+    effect = "read"
     name = "calculator"
     description = "Calculate addition, subtraction, or multiplication of two finite numbers."
     inputs = {
@@ -95,10 +94,11 @@ class Calculator(Tool):
             answer = a * b
         else:
             raise ValueError("Unsupported arithmetic operation")
-        return self.state.record(self.name, {"a": a, "b": b, "operation": operation}, {"answer": answer})
+        return {"answer": answer}
 
 
-class RememberCode(Tool):
+class RememberCode(RecordedTool, Tool):
+    effect = "write"
     name = "remember_code"
     description = "Store a code for this session only."
     inputs = {"code": {"type": "string", "description": "The code to remember"}}
@@ -112,10 +112,11 @@ class RememberCode(Tool):
         if not 1 <= len(code) <= 200:
             raise ValueError("Code must contain 1 to 200 characters")
         self.state.code = code
-        return self.state.record(self.name, {"code": code}, {"stored": True})
+        return {"stored": True}
 
 
-class RecallCode(Tool):
+class RecallCode(RecordedTool, Tool):
+    effect = "read"
     name = "recall_code"
     description = "Recall this session's code, returning NONE if nothing was stored."
     inputs = {}
@@ -126,7 +127,13 @@ class RecallCode(Tool):
         self.state = state
 
     def forward(self) -> dict:
-        return self.state.record(self.name, {}, {"code": self.state.code})
+        return {"code": self.state.code}
+
+
+class RecordedFinalAnswer(RecordedTool, FinalAnswerTool):
+    def __init__(self, state):
+        super().__init__()
+        self.state = state
 
 
 def message_text(message):
@@ -194,9 +201,10 @@ class OfflineToolModel(Model):
 class BudgetedModel(Model):
     """Count actual per-request calls; never reuse cumulative agent Token totals across turns."""
 
-    def __init__(self, backend):
+    def __init__(self, backend, recorder):
         super().__init__(model_id=backend.model_id)
         self.backend = backend
+        self.recorder = recorder
         self.begin(Budget(id="initial", deadline_seconds=60))
 
     def begin(self, budget):
@@ -217,7 +225,10 @@ class BudgetedModel(Model):
         if isinstance(self.backend, OpenAIModel):
             self.backend.client.timeout = max(0.01, remaining)
         self.calls += 1
-        response = self.backend.generate(messages, **kwargs)
+        response = self.recorder.invoke(
+            "llm", self.model_id, {"message_count": len(messages)},
+            lambda: self.backend.generate(messages, **kwargs),
+        )
         self.usages.append(response.token_usage)
         return response
 
@@ -265,9 +276,10 @@ class AgentTarget:
             retry=False, client_kwargs={"max_retries": 0, "http_client": httpx.Client(trust_env=False)},
             **self.completion_kwargs,
         )
-        model, tools = BudgetedModel(backend), ToolState()
+        tools = ToolState()
+        model = BudgetedModel(backend, tools.recorder)
         agent = ToolCallingAgent(
-            model=model, tools=[Calculator(tools), RememberCode(tools), RecallCode(tools)],
+            model=model, tools=[Calculator(tools), RememberCode(tools), RecallCode(tools), RecordedFinalAnswer(tools)],
             instructions=INSTRUCTIONS, max_steps=5, max_tool_threads=1, verbosity_level=LogLevel.OFF,
         )
         return Session(agent, model, tools)
@@ -288,6 +300,8 @@ class AgentTarget:
         # This small example serializes work; each session owns its agent, memory and model client.
         if not self.lock.acquire(timeout=min(request.budget.deadline_seconds, 1)):
             raise HTTPException(429, "Target is busy; no automatic retry")
+        session = None
+        tracing = False
         try:
             now = time.monotonic()
             for key in list(self.sessions):
@@ -305,6 +319,8 @@ class AgentTarget:
             if session.turn >= 0 and session.model.calls:
                 raise HTTPException(409, "Previous turn did not finish; choose a new session")
             session.model.begin(request.budget)
+            session.tools.recorder.begin(request.session_id, request.turn)
+            tracing = True
             first_call = len(session.tools.calls)
             prompt = request.prompt
             if request.input:
@@ -326,7 +342,8 @@ class AgentTarget:
                 "model": session.model.model_id, "model_calls": session.model.calls,
                 "tools": session.tools.calls[first_call:], "provenance": "target_reported",
             }}
-            response = {"protocol": "agent-review/target-v1", "output": answer}
+            response = {"protocol": "agent-review/target-v1", "output": answer,
+                        "trace": session.tools.recorder.trace()}
             usage = session.model.usage()
             if usage is not None:
                 response["usage"] = usage
@@ -341,6 +358,15 @@ class AgentTarget:
             raise
         except Exception:
             # Raw framework/API exceptions can contain request content or credentials.
+            if tracing:
+                response = {
+                    "protocol": "agent-review/target-v1", "output": None,
+                    "execution_status": "error", "error": "agent_execution_failed",
+                    "trace": session.tools.recorder.trace(),
+                }
+                encoded = json.dumps(redact(response, self.api_key), ensure_ascii=False, allow_nan=False)
+                if len(encoded.encode()) <= 256 * 1024:
+                    return json.loads(encoded)
             raise HTTPException(502, "Agent execution failed; check model availability and tool/JSON support") from None
         finally:
             self.lock.release()

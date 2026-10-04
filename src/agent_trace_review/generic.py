@@ -73,7 +73,7 @@ def import_generic(
         agent_version=version,
         task=manifest,
         task_prompt=trace.task_prompt,
-        models=trace.models,
+        models=list(dict.fromkeys(trace.models + [e.model for e in trace.events if e.model])),
         execution_status=trace.status,
         start_ms=trace.start_ms,
         end_ms=trace.end_ms,
@@ -154,7 +154,16 @@ def import_generic(
             time_basis="native" if item.start_ms is not None else "unknown",
             source_pointer=pointer,
             evidence_id=ref,
-            data={"truncated": item.truncated or raw["events"][index] != payload["events"][index]},
+            parent_message_id=item.parent_id,
+            call_id=item.id if item.kind in {"llm", "tool"} else None,
+            data={
+                "truncated": item.truncated or raw["events"][index] != payload["events"][index],
+                "model": item.model,
+                "duration_ms": item.duration_ms,
+                "usage": item.usage.model_dump() if item.usage else None,
+                "provenance": item.provenance,
+                "context": item.context,
+            },
         )
         run.events.append(event)
         run.evidence.append(

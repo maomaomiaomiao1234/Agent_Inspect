@@ -44,6 +44,11 @@ class TraceEvent(Contract):
     end_ms: float | None = Field(None, ge=0)
     truncated: bool = False
     usage: Usage | None = None
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    duration_ms: float | None = Field(default=None, ge=0, le=10**12, strict=True)
+    parent_id: str | None = Field(default=None, min_length=1, max_length=200)
+    provenance: Literal["exporter_reported", "target_reported", "host_observed"] = "exporter_reported"
+    context: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_event(self):
@@ -53,6 +58,8 @@ class TraceEvent(Contract):
             raise ValueError("只有 tool 事件能声明 tool / effect。")
         if self.usage is not None and self.kind != "llm":
             raise ValueError("usage 只放在独立 llm 调用事件中，避免重复计费。")
+        if self.model is not None and self.kind != "llm":
+            raise ValueError("只有 llm 事件能声明 model。")
         if self.start_ms is not None and self.end_ms is not None and self.end_ms < self.start_ms:
             raise ValueError("事件 end_ms 不能早于 start_ms。")
         return self

@@ -1124,12 +1124,20 @@ function RunDetail({
                   <div className="event-facts">
                     <span>
                       <Clock3 size={12} />
-                      {event.time_basis === "native" &&
+                      {typeof event.data.duration_ms === "number"
+                        ? fmt(event.data.duration_ms, "ms")
+                        : event.time_basis === "native" &&
                       event.start_ms != null &&
                       event.end_ms != null
                         ? fmt(event.end_ms - event.start_ms, "ms")
                         : "精确耗时未知"}
                     </span>
+                    {event.data.provenance === "target_reported" && <span>目标自报</span>}
+                    {typeof event.data.model === "string" && <span>模型 {event.data.model}</span>}
+                    {event.kind === "llm" && <span>
+                      输入 Token {(event.data.usage as { tokens?: { input?: number } } | null)?.tokens?.input ?? "未知"}
+                      {" · "}输出 Token {(event.data.usage as { tokens?: { output?: number } } | null)?.tokens?.output ?? "未知"}
+                    </span>}
                     {event.data.exit_code != null && (
                       <span>退出码 {String(event.data.exit_code)}</span>
                     )}

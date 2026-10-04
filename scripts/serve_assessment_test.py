@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--port", type=int, default=18765)
+    parser.add_argument("--telemetry-target", help="Local smolagents offline target URL for telemetry UI checks")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     server = runpy.run_path(str(root / "examples/assessment/mock_agent.py"))["serve"](port=0)
@@ -24,19 +25,17 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="assessment-ui-test-") as temp:
             registry = Path(temp) / "targets.json"
+            targets = [
+                {"id": "control" if mode == "correct" else mode,
+                 "endpoint": f"http://127.0.0.1:{server.server_port}",
+                 "task_path": "/" + mode, "health_path": "/health", "demo": True}
+                for mode in ("correct", "incorrect", "noop", "missing", "leaky")
+            ]
+            if args.telemetry_target:
+                targets.append({"id": "smolagents-offline", "endpoint": args.telemetry_target,
+                                "health_path": "/health", "demo": True})
             registry.write_text(
-                canonical(
-                    [
-                        {
-                            "id": "control" if mode == "correct" else mode,
-                            "endpoint": f"http://127.0.0.1:{server.server_port}",
-                            "task_path": "/" + mode,
-                            "health_path": "/health",
-                            "demo": True,
-                        }
-                        for mode in ("correct", "incorrect", "noop", "missing", "leaky")
-                    ]
-                )
+                canonical(targets)
             )
             uvicorn.run(
                 create_app(args.data_dir, targets_file=str(registry)), host="127.0.0.1", port=args.port

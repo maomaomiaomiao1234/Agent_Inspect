@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 
-from .contracts import Contract, TaskProfile, Usage
+from .contracts import Contract, TaskProfile, TraceEvent, Usage
 
 ID = r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$"
 
@@ -136,18 +136,84 @@ class TargetRequest(Contract):
     budget: Budget
 
 
+def validate_reported_usage(usage):
+    if usage is None:
+        return
+    tokens = usage.tokens
+    if any(v is not None and v > 10**12 for v in tokens.model_dump().values()):
+        raise ValueError("单次自报 Token 超过上限。")
+    if usage.cost_usd is not None and usage.cost_usd > 10**9:
+        raise ValueError("单次自报费用超过上限。")
+    if all(v is not None for v in (tokens.input, tokens.output, tokens.total)):
+        if tokens.total != tokens.input + tokens.output:
+            raise ValueError("自报 total 必须等于 input + output。")
+
+
+class TargetTraceEvent(TraceEvent):
+    id: str = Field(min_length=1, max_length=180)
+    parent_id: str | None = Field(default=None, min_length=1, max_length=180)
+    kind: Literal["llm", "tool"]
+    status: Literal["completed", "error", "skipped", "unknown"] = "unknown"
+    provenance: Literal["target_reported"] = "target_reported"
+
+    @model_validator(mode="after")
+    def bounded_call(self):
+        validate_reported_usage(self.usage)
+        return self
+
+
+class TargetTrace(Contract):
+    trace_version: Literal["agent-review/target-trace-v1"] = "agent-review/target-trace-v1"
+    session_id: str = Field(min_length=1, max_length=100)
+    turn: int = Field(ge=0, le=9, strict=True)
+    coverage: Literal["complete", "partial"] = "partial"
+    events: list[TargetTraceEvent] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def unique_calls(self):
+        seen = set()
+        for event in self.events:
+            if event.id in seen or event.parent_id and event.parent_id not in seen:
+                raise ValueError("调用 id 必须唯一；parent_id 必须引用本轮已记录的调用。")
+            seen.add(event.id)
+        return self
+
+
 class TargetResponse(Contract):
     protocol: Literal["agent-review/target-v1"] = "agent-review/target-v1"
     output: Any
     usage: Usage | None = None
+    execution_status: Literal["completed", "error"] = "completed"
+    error: Literal["agent_execution_failed"] | None = None
+    trace: TargetTrace | None = None
 
     @model_validator(mode="after")
     def bounded_usage(self):
-        if self.usage:
-            if any(v is not None and v > 10**12 for v in self.usage.tokens.model_dump().values()):
-                raise ValueError("单次自报 Token 超过上限。")
-            if self.usage.cost_usd is not None and self.usage.cost_usd > 10**9:
-                raise ValueError("单次自报费用超过上限。")
+        validate_reported_usage(self.usage)
+        if (self.execution_status == "error") != (self.error is not None):
+            raise ValueError("执行错误需要 error；成功响应不能声明 error。")
+        if self.trace and self.trace.coverage == "complete":
+            calls = [e for e in self.trace.events if e.kind == "llm"]
+            if calls:
+                totals = {}
+                for key in ("input", "output", "total", "reasoning"):
+                    values = [getattr(e.usage.tokens, key) if e.usage else None for e in calls]
+                    totals[key] = sum(values) if all(v is not None for v in values) else None
+                if totals["total"] is None and totals["input"] is not None and totals["output"] is not None:
+                    totals["total"] = totals["input"] + totals["output"]
+                costs = [e.usage.cost_usd if e.usage else None for e in calls]
+                cost = sum(costs) if all(v is not None for v in costs) else None
+                if self.usage is None and (any(v is not None for v in totals.values()) or cost is not None):
+                    self.usage = Usage(tokens=totals, cost_usd=cost)
+                elif self.usage:
+                    for key, value in totals.items():
+                        reported = getattr(self.usage.tokens, key)
+                        if value is not None and reported is not None and value != reported:
+                            raise ValueError("汇总 Token 与本轮逐次调用不一致。")
+                    if cost is not None and self.usage.cost_usd is not None:
+                        if abs(cost - self.usage.cost_usd) > 1e-8:
+                            raise ValueError("汇总费用与本轮逐次调用不一致。")
+                validate_reported_usage(self.usage)
         return self
 
 

@@ -109,6 +109,9 @@ def test_smolagents_recipe_uses_checked_out_source_and_runtime_only_credentials(
     dockerfile = (work / "context/Dockerfile").read_text()
     assert "'/opt/smolagents[openai]'" in dockerfile and '"offline"' in dockerfile
     assert "API_KEY" not in dockerfile
+    assert "COPY telemetry.py /app/telemetry.py" in dockerfile
+    assert b"class CallRecorder" in (work / "context/telemetry.py").read_bytes()
+    assert plan["telemetry_hash"]
     assert "SMOL_SOURCE_COMMIT=" + "a" * 40 in dockerfile
     assert (work / "context/source/pyproject.toml").read_text() == (root / "pyproject.toml").read_text()
 

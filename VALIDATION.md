@@ -1,6 +1,6 @@
 # 验证记录索引
 
-历史记录按各自验证日期和范围保留。最新记录见 [仓库自动部署并评测（2026-10-04）](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)，此前为 [自动生成测试文件](SUITE_GENERATION_VALIDATION.zh-CN.md)、[smolagents 框架/真实模型接入](examples/smolagents/VALIDATION.zh-CN.md)、[主动 Agent 评测与服务部署](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)、[代码修复](TASK2_VALIDATION.zh-CN.md) 和 [文档转换](TASK3_VALIDATION.zh-CN.md)；当前项目状态见 [开发交接](HANDOFF.zh-CN.md)。
+历史记录按各自验证日期和范围保留。最新记录见 [模型与工具遥测（2026-10-04）](TARGET_TELEMETRY_VALIDATION.zh-CN.md)，此前为 [仓库自动部署并评测](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)、[自动生成测试文件](SUITE_GENERATION_VALIDATION.zh-CN.md)、[smolagents 框架/真实模型接入](examples/smolagents/VALIDATION.zh-CN.md)、[主动 Agent 评测与服务部署](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)、[代码修复](TASK2_VALIDATION.zh-CN.md) 和 [文档转换](TASK3_VALIDATION.zh-CN.md)；当前项目状态见 [开发交接](HANDOFF.zh-CN.md)。
 
 ---
 
@@ -54,3 +54,9 @@ Token 只用于请求认证；报告记录模型、API 地址、评审标准、�
 代码状态与 suite hash 由提供验收材料的一方保证；本版本不执行 independent verifier，也不重新计算外部报告的真实性。原生格式检查使用合成会话，没有读取用户现有会话、访问真实模型或消耗付费 API。
 
 尚未验证的部分：其他 OpenCode 版本、真实任务集上的 detector 精确率/召回率、真实 provider 的 Judge 回答质量与费用、多任务多次运行的模型统计排名。使用方法和后续范围见 [README](README.md) 与 [实施计划](IMPLEMENTATION_PLAN.zh-CN.md)。
+
+---
+
+# 逐次模型与工具记录（2026-10-04）
+
+协议、统计、网页及打包验证，12 题真实框架 offline 校准和一题真实 DeepSeek 记录见 [遥测验收](TARGET_TELEMETRY_VALIDATION.zh-CN.md)。用量及内部调用由目标自报，缺失字段保持未知。

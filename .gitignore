@@ -7,6 +7,7 @@ __pycache__/
 .agent-review/
 review-data/
 review-data-smolagents/
+review-data-telemetry/
 .claude/
 tmp/
 node_modules/

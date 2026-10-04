@@ -43,6 +43,7 @@ invoice 包含合成轨迹、JSON 规则、external 规则及可运行的 Python
 - coverage 默认为 partial。complete 是导出方对全部调用的声明；部分轨迹不能证明工具未被调用，资源阈值也可能保持 unknown。
 - output 是最终 JSON 结果，artifacts 是内嵌辅助材料。导入器不读取其中引用的路径或 URL。参考答案应由验收方提供。
 - 可选 task_prompt/title/agent_version/models/demo。合成数据设置 demo: true。
+- 调用事件还可提供 model（仅 llm）、单调时钟测量的 duration_ms、parent_id、provenance 与 context。主动 HTTP 评测的可选 target-trace-v1 会转换到这些事件；逐次用量与轮次汇总不重复累计。完整覆盖是采集方声明，缺少内部记录的旧目标仍保持 partial。
 
 其他框架需编写转换器，明确映射上述字段，不补造未观测数据。完整机器合同见 `schema --output schema.json` 中的 generic_trace。
 

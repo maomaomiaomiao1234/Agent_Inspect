@@ -105,11 +105,19 @@ def copy_context(source, destination):
     return digest(sorted(inventory))
 
 
-def smolagents_adapter():
-    bundled = files("agent_trace_review").joinpath("repository_templates/smolagents_agent.py")
+def _smolagents_file(source_name, bundled_name):
+    bundled = files("agent_trace_review").joinpath("repository_templates/" + bundled_name)
     if bundled.is_file():
         return bundled.read_bytes()
-    return (Path(__file__).resolve().parents[2] / "examples/smolagents/agent_server.py").read_bytes()
+    return (Path(__file__).resolve().parents[2] / "examples/smolagents" / source_name).read_bytes()
+
+
+def smolagents_adapter():
+    return _smolagents_file("agent_server.py", "smolagents_agent.py")
+
+
+def smolagents_telemetry():
+    return _smolagents_file("telemetry.py", "smolagents_telemetry.py")
 
 
 def build_plan(request, root, work, *, commit=None):
@@ -139,10 +147,13 @@ def build_plan(request, root, work, *, commit=None):
         source_hash = copy_context(root, context / "source")
         adapter = smolagents_adapter()
         (context / "agent_server.py").write_bytes(adapter)
+        telemetry = smolagents_telemetry()
+        (context / "telemetry.py").write_bytes(telemetry)
         dockerfile = (
             "FROM python:3.12-slim\nWORKDIR /app\nCOPY source /opt/smolagents\n"
             "RUN pip install --no-cache-dir '/opt/smolagents[openai]' 'fastapi>=0.115,<1' 'uvicorn>=0.34,<1' 'httpx>=0.28,<1'\n"
             "COPY agent_server.py /app/agent_server.py\n"
+            "COPY telemetry.py /app/telemetry.py\n"
             f"ENV SMOL_SOURCE_COMMIT={commit or 'unknown'}\n"
             "ENV PYTHONDONTWRITEBYTECODE=1 HF_HOME=/tmp/huggingface\nUSER 65534:65534\nEXPOSE 9091\n"
             'ENTRYPOINT ["python", "-B", "/app/agent_server.py", "--host", "0.0.0.0", "--port", "9091", "--backend", '
@@ -155,7 +166,8 @@ def build_plan(request, root, work, *, commit=None):
             health_status_field="backend", health_status_value=request.backend,
             required_environment=["SMOL_MODEL_API_BASE", "SMOL_MODEL_ID", "SMOL_MODEL_API_KEY"] if request.backend == "openai" else [])
         plan = {"recipe": recipe, "source_context_hash": source_hash, "adapter_hash": digest(adapter),
-                "context_hash": digest([source_hash, digest(adapter), dockerfile]), "dockerfile": "Dockerfile"}
+                "telemetry_hash": digest(telemetry),
+                "context_hash": digest([source_hash, digest(adapter), digest(telemetry), dockerfile]), "dockerfile": "Dockerfile"}
     else:
         raise RepositoryError("unsupported_repository_requires_manifest")
     if request.suite is None and manifest.test_template is None:

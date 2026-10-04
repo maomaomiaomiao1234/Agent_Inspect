@@ -28,7 +28,7 @@ git -C tmp/third-party/smolagents rev-parse HEAD
 
 ## 2. 使用 DeepSeek 模型 API
 
-把 `.env.example` 复制为 `examples/smolagents/.env`，填写密钥；本机已创建这个文件并预填地址和模型名，只需补充 `SMOL_MODEL_API_KEY`。真实 `.env` 已在项目忽略规则中：
+把 `.env.example` 复制为 `examples/smolagents/.env`，填写密钥。也可使用项目根目录 `.env`，把启动命令的 `--env-file` 改为 `.env`。真实 `.env` 已在项目忽略规则中：
 
 ```dotenv
 SMOL_MODEL_API_BASE=https://api.deepseek.com
@@ -123,7 +123,7 @@ uv run agent-review serve --data-dir ./review-data-smolagents \
 
 其中 arithmetic/memory 报告关联上游 `agents.py` 的固定位置，属于操作方指定的源码线索。最终能力结果依据 Profile，源码位置不证明失败原因。
 
-答案附带 `_execution`，记录框架/版本、backend、model、实际调用次数和本轮固定工具的参数/结果。该材料仍是目标自报；评审器保存的 HTTP 轨迹保持 partial，不把这些字段伪造为已认证内部工具事件。不导出模型隐藏推理和原始 API 响应，已知密钥回显会脱敏。
+答案附带 `_execution`，保留本轮三个业务工具的摘要。响应另有标准 `trace`，记录逐次模型调用与所有工具入口（包括 final_answer），包含状态、耗时、逐次用量及关联；失败调用同样记录。评审器会接入通用轨迹、行为规则和错误恢复诊断，并显示 Token/调用次数/耗时。完整覆盖是采集方声明，不是独立认证；旧评测不会自动补造内部记录。不导出模型隐藏推理和原始 API 响应，已知密钥回显会脱敏。详见 [调用记录指南](../../docs/TARGET_TELEMETRY.zh-CN.md)。
 
 本示例不使用 CodeAgent，不执行模型生成的 Python，也没有文件、Shell、网页搜索等工具。它是本地起步目标，256 个 session 保留最多 1 小时，服务重启清空被测 Agent 的内存；评审端报告仍由自己的 data-dir 持久化。目标侧任务串行执行，忙时返回 429；请求超时不保证提供商已停止计费。
 

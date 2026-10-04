@@ -129,6 +129,8 @@ uv run agent-review repo-inspect /absolute/path/to/cloned-agent \
 
 `output` 必须存在，可为合法 JSON 值。`usage` 可省略；提供时必须是有限非负数，Token 必须为整数。示例中的用量仅展示格式。评审端将其标记为目标自报，不当作供应商账单。目标响应包含协议未声明的额外字段时会被拒绝。
 
+可选 `trace` 提供逐次模型和工具事件，支持 Token、参数/结果、错误、耗时与会话关联；可选 `execution_status/error` 保留失败任务的已有轨迹。旧响应继续可用。字段约束、计数与费用来源、其他框架接入方法见 [模型与工具记录](TARGET_TELEMETRY.zh-CN.md)。
+
 每个 case × budget × attempt 使用新的 session_id，同一 case 的多轮请求使用相同 ID。`history: "full"`（默认）发送累计可见对话；`history: "current"` 只发送本轮用户消息，适合检验服务内的记忆。`input` 用于题集提供的公开 JSON 输入材料；评审端不会把 Profile、标准答案、源码线索或其他 session 的消息放进请求。
 
 目标必须自行把 `session_id` 关联到其会话。HTTP 客户端不跟随重定向、不继承宿主机代理、不自动重试；单次请求最多 128 KiB、响应最多 256 KiB。支持未压缩 JSON，拒绝其他 Content-Encoding。取消、超时、无效 JSON、缺少有效协议或凭据错误会保留执行状态和已有对话，不能据此确认能力通过。
