@@ -16,6 +16,7 @@ from .analysis import analyze, compare
 from .assessment_contracts import (
     AssessmentInput,
     AssessmentSuite,
+    SuiteGenerationInput,
     TargetDefinition,
     TargetRequest,
     TargetResponse,
@@ -40,8 +41,11 @@ from .opencode import MAX_IMPORT
 from .profiles import evaluate_profile, evaluator_request
 from .reports import junit_report, markdown_report
 from .repositories import compare_repositories, inspect_repository
+from .repository_contracts import RepositoryAssessmentInput, RepositoryManifest
+from .repository_jobs import RepositoryManager
 from .service import ingest
 from .storage import Store
+from .suite_generation import generate_suite
 from .util import canonical
 
 
@@ -83,10 +87,13 @@ def read_upload(file: UploadFile, limit: int) -> bytes:
 
 def create_app(
     data_dir: str | None = None, static_dir: str | None = None, targets_file: str | None = None,
+    enable_repository_builds: bool = False, repository_environment: tuple[str, ...] = (),
 ) -> FastAPI:
     store = Store(data_dir or os.environ.get("AGENT_REVIEW_DATA", ".agent-review"))
     registry_path = targets_file or os.environ.get("AGENT_REVIEW_TARGETS")
     manager = AssessmentManager(store, load_targets(Path(registry_path) if registry_path else None))
+    repository_manager = RepositoryManager(manager, enabled=enable_repository_builds,
+                                           allowed_environment=repository_environment)
     service_token = os.environ.get("AGENT_REVIEW_SERVICE_TOKEN", "")
 
     @asynccontextmanager
@@ -94,11 +101,13 @@ def create_app(
         try:
             yield
         finally:
+            repository_manager.close()
             manager.close()
 
     app = FastAPI(title="Agent Trace Review", version="0.3.0", lifespan=lifespan)
     app.state.store = store
     app.state.assessments = manager
+    app.state.repository_jobs = repository_manager
     hosts = ["localhost", "127.0.0.1", "[::1]", "testserver"]
     hosts += [v.strip() for v in os.environ.get("AGENT_REVIEW_ALLOWED_HOSTS", "").split(",") if v.strip()]
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
@@ -113,7 +122,7 @@ def create_app(
             if not secrets.compare_digest(supplied.encode(), ("Bearer " + service_token).encode()):
                 return Response("需要服务访问令牌（Authorization: Bearer ...）。", status_code=401)
         # New active-assessment bodies are bounded before Pydantic parses nested suites.
-        if request.url.path.startswith("/api/assessments") and request.method == "POST":
+        if request.url.path.startswith(("/api/assessments", "/api/assessment-suites", "/api/repository-jobs")) and request.method == "POST":
             size = 0
             chunks = []
             async for chunk in request.stream():
@@ -159,6 +168,38 @@ def create_app(
     def targets():
         return [public_target(t) for t in manager.targets.values()]
 
+    @app.get("/api/repository-builds")
+    def repository_build_capabilities():
+        return repository_manager.capabilities()
+
+    @app.post("/api/repository-jobs", status_code=202)
+    def start_repository_assessment(body: RepositoryAssessmentInput):
+        try:
+            return repository_manager.submit(body)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    @app.get("/api/repository-jobs")
+    def repository_jobs(limit: int = Query(50, ge=1, le=100)):
+        return repository_manager.db.list(limit)
+
+    @app.get("/api/repository-jobs/{job_id}")
+    def repository_job(job_id: str):
+        return repository_manager.db.get(job_id)
+
+    @app.post("/api/repository-jobs/{job_id}/cancel")
+    def cancel_repository_job(job_id: str):
+        job = repository_manager.db.cancel(job_id)
+        if job["assessment_id"]:
+            manager.db.cancel(job["assessment_id"])
+        return job
+
+    @app.get("/api/repository-jobs/{job_id}/export")
+    def export_repository_job(job_id: str):
+        content = canonical(repository_manager.bundle(job_id))
+        return Response(content, media_type="application/octet-stream",
+                        headers={"Content-Disposition": f'attachment; filename="{job_id}.json"'})
+
     @app.post("/api/targets/{target_id}/repository-profile")
     def repository_profile(target_id: str):
         target = manager.targets.get(target_id)
@@ -183,6 +224,10 @@ def create_app(
             return manager.submit(body.target_id, body.suite)
         except (ValueError, OSError):
             raise HTTPException(422, "无法启动评测；检查目标登记、源码引用、仓库版本和队列容量。") from None
+
+    @app.post("/api/assessment-suites/generate", response_model=AssessmentSuite)
+    def generate_assessment_suite(body: SuiteGenerationInput):
+        return generate_suite(body)
 
     @app.get("/api/assessments")
     def assessments(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
@@ -463,6 +508,9 @@ def create_app(
             "task_profile": TaskProfile.model_json_schema(),
             "evaluator_response": EvaluatorResponse.model_json_schema(),
             "assessment_suite": AssessmentSuite.model_json_schema(),
+            "suite_generation_input": SuiteGenerationInput.model_json_schema(),
+            "repository_assessment_input": RepositoryAssessmentInput.model_json_schema(),
+            "repository_manifest": RepositoryManifest.model_json_schema(),
             "target_definition": TargetDefinition.model_json_schema(),
             "target_request": TargetRequest.model_json_schema(),
             "target_response": TargetResponse.model_json_schema(),

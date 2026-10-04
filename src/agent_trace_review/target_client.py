@@ -39,11 +39,11 @@ def scrub(value, secrets=()):
 
 
 class TargetClient:
-    def __init__(self, target: TargetDefinition, endpoint: str | None = None, transport=None):
+    def __init__(self, target: TargetDefinition, endpoint: str | None = None, transport=None, token_override=None):
         self.target = target
         self.endpoint = (endpoint or target.endpoint or "").rstrip("/")
         self.transport = transport
-        self.token = os.environ.get(target.token_env, "") if target.token_env else ""
+        self.token = token_override if token_override is not None else os.environ.get(target.token_env, "") if target.token_env else ""
         if target.token_env and not self.token:
             raise TargetError("missing_target_credential")
         self.secrets = [self.token]
@@ -120,8 +120,28 @@ def _docker(*args: str) -> str:
     return result.stdout.decode(errors="replace").strip()
 
 
+def remove_container(name, owner=None):
+    if owner:
+        # Never remove an unrelated container whose name happens to collide.
+        all_matches = _docker("ps", "-aq", "--filter", f"name=^/{name}$")
+        if not all_matches:
+            return
+        owned = _docker("ps", "-aq", "--filter", f"name=^/{name}$", "--filter", f"label=agent-inspect.owner={owner}")
+        if owned != all_matches:
+            raise TargetError("container_owner_mismatch:" + name)
+    try:
+        _docker("rm", "-f", name)
+    except TargetError:
+        try:
+            remaining = _docker("ps", "-aq", "--filter", f"name=^/{name}$")
+        except TargetError:
+            raise TargetError("container_cleanup_failed:" + name) from None
+        if remaining:
+            raise TargetError("container_cleanup_failed:" + name) from None
+
+
 @contextmanager
-def deployed_target(target: TargetDefinition):
+def deployed_target(target: TargetDefinition, *, resources=None, job_id=None, cancelled=lambda: False, service_token=None):
     """Never builds/pulls images, mounts the host, or falls back to host execution."""
     if not target.deployment:
         yield (
@@ -133,9 +153,11 @@ def deployed_target(target: TargetDefinition):
     image = json.loads(_docker("image", "inspect", config.image))[0]
     if image["Id"] != config.image or image.get("Config", {}).get("Volumes"):
         raise TargetError("image_identity_or_volumes_invalid")
-    name = "agent-inspect-target-" + uuid.uuid4().hex
+    if cancelled():
+        raise TargetError("cancel_requested")
+    name = resources.reserve_container(job_id) if resources else "agent-inspect-target-" + uuid.uuid4().hex
     env_file = None
-    env_secrets = [os.environ.get(v, "") for v in config.environment.values()]
+    env_secrets = [os.environ.get(v, "") for v in config.environment.values()] + [service_token or ""]
     started = time.monotonic()
     try:
         args = [
@@ -160,14 +182,22 @@ def deployed_target(target: TargetDefinition):
             "--publish",
             f"127.0.0.1::{config.port}",
         ]
-        if config.environment:
+        if resources:
+            args += ["--label", f"agent-inspect.owner={resources.resource_owner}", "--label", f"agent-inspect.job={job_id}"]
+        if config.environment or config.service_token_variable:
             fd, env_file = tempfile.mkstemp(prefix="agent-inspect-env-")
             with os.fdopen(fd, "w") as output:
+                if resources:
+                    resources.resource_env(name, env_file)
                 for name_in_container, host_name in config.environment.items():
                     value = os.environ.get(host_name)
                     if value is None or "\n" in value or "\r" in value:
                         raise TargetError("invalid_deployment_environment")
                     output.write(f"{name_in_container}={value}\n")
+                if config.service_token_variable:
+                    if not service_token:
+                        raise TargetError("missing_generated_service_token")
+                    output.write(f"{config.service_token_variable}={service_token}\n")
             args += ["--env-file", env_file]
         _docker(*args, config.image)
         if env_file:
@@ -177,9 +207,11 @@ def deployed_target(target: TargetDefinition):
         bindings = state["NetworkSettings"]["Ports"][f"{config.port}/tcp"]
         port = next(b["HostPort"] for b in bindings if b["HostIp"] == "127.0.0.1")
         endpoint = "http://127.0.0.1:" + port
-        client = TargetClient(target, endpoint)
+        client = TargetClient(target, endpoint, token_override=service_token)
         health = None
         while time.monotonic() - started < 30:
+            if cancelled():
+                raise TargetError("cancel_requested")
             try:
                 health = client.health(timeout=min(2, max(0.05, 30 - (time.monotonic() - started))))
                 break
@@ -193,6 +225,7 @@ def deployed_target(target: TargetDefinition):
                 "mode": "docker",
                 "status": "ready",
                 "image_id": config.image,
+                "container_name": name,
                 "startup_seconds": round(time.monotonic() - started, 3),
                 "health": health,
                 "policy": {
@@ -210,14 +243,7 @@ def deployed_target(target: TargetDefinition):
     finally:
         if env_file and os.path.exists(env_file):
             os.unlink(env_file)
-        # A failed cleanup is surfaced, including the exact container that needs attention.
-        try:
-            _docker("rm", "-f", name)
-        except TargetError:
-            # Only a successful inventory can establish that a failed creation left no container.
-            try:
-                remaining = _docker("ps", "-aq", "--filter", f"name=^/{name}$")
-            except TargetError:
-                raise TargetError("container_cleanup_failed:" + name) from None
-            if remaining:
-                raise TargetError("container_cleanup_failed:" + name) from None
+        if resources:
+            resources.cleanup_resource(name)
+        else:
+            remove_container(name)

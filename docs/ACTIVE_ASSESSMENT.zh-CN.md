@@ -2,7 +2,7 @@
 
 这条流程会向被测 Agent 的 HTTP 服务实际发送任务，保存对话，再用评审端的固定 Profile 检查输出。仓库扫描提供能力声明与源码位置，任务执行提供观测结果，两者会关联到同一份报告。
 
-当前实现是确定性的评测编排服务。它不会根据 README 自动执行安装命令，也不会自动猜出所有任务的正确答案。比赛题集和标准答案需要由评审方固定；已有服务通过下面的协议接入。
+当前实现是确定性的评测编排服务。现在支持 [从仓库自动部署并评测](REPOSITORY_ASSESSMENT.zh-CN.md)：公开 GitHub 上的 smolagents 或带部署清单的目标可自动接入。比赛题集和标准答案仍由评审方固定；已有服务通过下面的协议接入。
 
 ## 1. 先跑通控制 Agent
 
@@ -51,6 +51,21 @@ uv run agent-review assessment-report assessment_ID \
 
 `assess` 的退出码表示编排是否完成，能力是否通过应读取每个案例的 `outcome`；一个全部答错、但正常响应的 Agent 仍可完成整个评测。网页详情可查看单个案例的对话、验收、源码线索，下载报告与完整证据包。
 
+### 自动生成测试文件
+
+使用 [smolagents 示例](../examples/smolagents/README.md) 时，无需手写所有题目。网页的新建评测区提供「自动生成测试文件」，配置 1–30 个案例和种子后，生成的题集自动成为当前评测输入。可以预览验收规则、下载保存，也可以直接开始评测。
+
+```sh
+uv run agent-review generate-suite --template smolagents --cases 12 --seed 42 \
+  --output ./my-tests/suite.json
+```
+
+生成器版本为 `smolagents-v1`，按种子变化数字与记忆代码，交替生成加法、减法、乘法、两步工具调用、两轮记忆、隔离及干扰题。标准答案由程序独立计算，生成过程不访问被测目标或模型。生成的 JSON 遵守既有 assessment-v1 协议，默认每案例期限 30 秒、请求最多 2048 output Token；生成后在提交时冻结题集，改变种子会改变题目，不能直接作为相同题集的版本回归。
+
+生成端 API：`POST /api/assessment-suites/generate`，body 为 `{"template":"smolagents","cases":12,"seed":42}`，响应为可保存的 Suite JSON。该接口沿用服务认证及 `X-Review-Request: 1`，仅生成数据，不提交任务。请求合同也由 `/api/schema` 的 `suite_generation_input` 提供。
+
+此模板要求目标提供算术、保存代码、读取代码工具，以及 `/output/answer`、`/output/stored`、`/output/code` 输出约定。它不会读取任意仓库来猜测输入输出接口；其他 Agent 需要自己的模板或独立验收标准。生成的答案不发送给目标，工具步数材料仍为目标自报；固定干扰题通过不代表全面的提示注入防御能力。
+
 ## 2. 登记真实目标与仓库
 
 目标登记文件由服务管理员管理，格式为 JSON 数组。API 用户只能选择登记的 `target_id`，不能通过请求覆盖 URL、仓库路径或 Docker 配置。目标登记变更后重启服务。
@@ -73,7 +88,7 @@ uv run agent-review assessment-report assessment_ID \
 
 没有目标鉴权时省略 `token_env`。凭据通过对应环境变量提供，登记文件不接收凭据值。`endpoint` 是服务根地址，不能含用户名、密码、query 或路径；任务与健康检查路径单独配置。健康检查默认要求 2xx JSON 中 `status` 等于 `ok`，可设置 `health_status_field` 和 `health_status_value` 适配其他服务。
 
-仓库应先由管理员克隆。扫描读取本地 Git 对象，先把 ref 解析成固定 commit，再读取该提交的文件；不会 checkout、执行代码、初始化子模块或采用未提交改动。没有 `.git` 的目录可生成内容快照，`commit` 保持空，不能将它视为某个已部署版本。
+使用已有服务登记时，仓库应先由管理员克隆；使用仓库自动评测入口时由流水线拉取并固定提交。这里的扫描器只读取本地 Git 对象，不执行代码、初始化子模块或采用未提交改动。没有 `.git` 的目录可生成内容快照，`commit` 保持空，不能将它视为某个已部署版本。
 
 ```sh
 uv run agent-review repo-inspect /absolute/path/to/cloned-agent \

@@ -1,6 +1,7 @@
 """Active assessment orchestrator: fixed cases -> target calls -> independent Profiles."""
 
 import json
+import secrets
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +12,7 @@ from .assessment_store import AssessmentStore
 from .profiles import evaluate_profile
 from .repositories import inspect_repository
 from .service import ingest
+from .service_lock import ServiceLock
 from .storage import Store
 from .target_client import TargetClient, TargetError, deployed_target, scrub
 from .util import canonical, digest, now
@@ -28,6 +30,9 @@ def engine_hash():
         "analysis.py",
         "contracts.py",
         "util.py",
+        "repository_jobs.py",
+        "repository_contracts.py",
+        "repository_process.py",
     )
     root = Path(__file__).parent
     return digest({name: digest((root / name).read_bytes()) for name in modules})
@@ -152,7 +157,9 @@ def _usage(turns, budget, execution_complete=True):
     adherence = "not_requested"
     if budget.max_output_tokens:
         adherence = "unknown"
-        if complete and all(v is not None for v in outputs):
+        if sum(v for v in outputs if v is not None) > budget.max_output_tokens:
+            adherence = "fail"
+        elif complete and all(v is not None for v in outputs):
             adherence = "pass" if sum(outputs) <= budget.max_output_tokens else "fail"
     return {
         "total_tokens": total_tokens,
@@ -184,7 +191,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
             for t in turns
             if t["usage"] and t["usage"]["tokens"]["output"] is not None
         ]
-        if budget.max_output_tokens and len(reported_outputs) == len(turns):
+        if budget.max_output_tokens:
             available = budget.max_output_tokens - sum(reported_outputs)
             if available <= 0:
                 state, error = "budget_exhausted", "output_token_budget_exhausted"
@@ -355,7 +362,7 @@ def _summarize(body, suite, repository):
             body["claims"].append({**claim, "assessment_status": status, "case_ids": sorted(case_ids)})
 
 
-def run_assessment(db, job_id, target, suite, repository=None, *, transport=None):
+def run_assessment(db, job_id, target, suite, repository=None, *, transport=None, cancel_check=None):
     if not db.claim(job_id):
         return db.job(job_id)
     body = _body(db.job(job_id))
@@ -363,13 +370,16 @@ def run_assessment(db, job_id, target, suite, repository=None, *, transport=None
     db.update(job_id, body)
 
     def cancelled():
-        return db.job(job_id)["cancel_requested"]
+        return db.job(job_id)["cancel_requested"] or bool(cancel_check and cancel_check())
 
     state = "completed"
     try:
-        with deployed_target(target) as (endpoint, deployment):
+        token = secrets.token_urlsafe(32) if target.deployment and target.deployment.service_token_variable else None
+        with deployed_target(target, resources=db, job_id=job_id, cancelled=cancelled, service_token=token) as (endpoint, deployment):
+            if body.get("build_provenance", {}).get("image_id") == deployment.get("image_id") and deployment.get("image_id"):
+                deployment["source_binding"] = "built_from_checkout"
             body["deployment"] = deployment
-            client = TargetClient(target, endpoint, transport=transport)
+            client = TargetClient(target, endpoint, transport=transport, token_override=token)
             if target.health_path and not target.deployment:
                 body["health"] = client.health()
             db.update(job_id, body)
@@ -404,8 +414,10 @@ def run_assessment(db, job_id, target, suite, repository=None, *, transport=None
 
 class AssessmentManager:
     def __init__(self, store: Store, targets: dict[str, TargetDefinition]):
+        self._lock = ServiceLock(store.root)
         self.db = AssessmentStore(store)
         self.targets = targets
+        self.db.recover_resources()
         self.db.recover_interrupted()
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="agent-assessment")
 
@@ -424,7 +436,8 @@ class AssessmentManager:
     def close(self):
         for job_id in self.db.active_jobs():
             self.db.cancel(job_id)
-        self.executor.shutdown(wait=False, cancel_futures=True)
+        self.executor.shutdown(wait=True, cancel_futures=True)
+        self._lock.close()
 
 
 def compare_assessments(left, right):
@@ -519,6 +532,11 @@ def assessment_markdown(job):
             f"- {claim['id']} / {claim['capability']}：{claim['assessment_status']}；{claim['path']}:{claim['line']}"
         )
     lines += ["", "## 可复现材料与限制", "", f"- Suite 工件：{job['suite_artifact']}"]
+    if job.get("build_provenance"):
+        build = job["build_provenance"]
+        lines += [f"- 源码构建：{build['repository_url']} @ {build['commit']}",
+                  f"- 构建输入 SHA-256：{build['context_hash']}", f"- 实际镜像：{build['image_id']}",
+                  f"- 仓库任务：{build['repository_job_id']}；本机从固定 checkout 构建"]
     if job.get("error"):
         lines.append(f"- 执行错误：{job['error']}")
     lines += [f"- {v}" for v in job["limitations"]]

@@ -1,0 +1,1 @@
+{"check":"actual_docker_crash_recovery","child_exit_code":17,"container_removed_after_restart":true,"container_running_after_crash":true,"demo":true,"image_id":"sha256:17e8beaddd7e1ea49d1e612a20be059cf4eea9c7bd9408db957c6aa91f1778b8","task_state":"interrupted"}

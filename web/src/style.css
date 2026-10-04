@@ -17,6 +17,25 @@
   gap: 8px;
   min-width: 0;
 }
+.assessment-controls .repository-url {
+  flex: 1 1 360px;
+}
+.repository-url input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.repository-environment {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.repository-environment textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  resize: vertical;
+  font: inherit;
+}
 .assessment-controls input,
 .assessment-controls select,
 .service-access input {

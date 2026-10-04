@@ -1,6 +1,6 @@
 # Agent_Inspect 开发交接
 
-更新日期：2026-10-03（Task 4 主动评测与服务部署完成后更新）。历史专项记录保留各自当时的验证范围，当前状态以本节及 Task 4 为准。
+更新日期：2026-10-04（仓库自动拉取、部署、评测首版完成）。历史专项记录保留各自当时的验证范围，当前状态以本节及 Task 4 为准。
 
 ## 0. 当前状态
 
@@ -8,8 +8,12 @@
 - **Task 2 已完成：** generic/2 证据包、固定模拟候选、实际 Docker 独立验证、CLI、网页、报告、单元测试和真实容器验收。
 - **Task 3 样例阶段已完成：** 自制数字 PDF、固定独立标注、五种模拟候选及实际本地专项评估；真实转换 Agent、OCR 和官方基准尚未接入。
 - **Task 4 第一版已完成：** 固定仓库能力档案、真实 HTTP 主动评测、多轮/记忆/隔离、声明与源码关联、预算曲线、版本回归、访问令牌及实际容器服务验收。
+- **smolagents 接入及首次真实模型测试已完成：** 独立依赖、真实 ToolCallingAgent、HTTP 适配器、6 项固定题集、单案例题集及 DeepSeek 模型入口。脚本模型的 HTTP 校准 6/6 pass，适配层最新 8 项测试通过；用户配置密钥后真实 deepseek-flash 单题 1/1、完整题集 6/6 pass。
+- **自动生成题集已完成：** smolagents 模板按种子生成 1–30 个案例、程序标准答案与 Profile；网页可预览/下载并直接评测，CLI/API 同样可生成。最大 30 题的真实框架 offline 校准通过；未新增 DeepSeek 调用。
+- **仓库自动部署评测首版已完成：** CLI/API/网页接收公开 GitHub HTTPS URL，固定提交，按内置 smolagents 配方或 `agent-review.json` 构建实际源码，健康检查后执行独立题集，导出构建和评测证据并清理资源。实际仅提供 smolagents URL 的默认流程为 12/12 pass，offline/demo；不代表模型能力成绩。操作与边界见 [指南](docs/REPOSITORY_ASSESSMENT.zh-CN.md)，真实构建、崩溃恢复与回归证据见 [验收记录](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)。
+- **此前审核的三个问题已修复：** 容器身份与临时环境文件持久化并在重启时回收；多轮历史接受 JSON 输出；用量不完整时仍扣除已知 Token 并判定已知超额。构建子进程随父进程异常退出而终止，同一数据目录禁止并发启动两个服务。
 - 本目录仍**没有 `.git`**，磁盘源码是当前工作副本。GitHub 仓库已配置并发布此前实现：`git@github.com:maomaomiaomiao1234/Agent_Inspect.git`；提交操作使用独立临时克隆，迁移可克隆远端或保留当前文件。
-- 最新后端测试 **266 passed / 2 warnings**；Ruff 和前端构建通过；Chrome Playwright **7 passed / 1 skipped**，另一次认证主动评测 **1 passed**。
+- 最新后端测试 **310 passed / 2 warnings**，smolagents 独立适配层 **9 passed**；Ruff 和前端构建通过；本轮 Chrome 主动评测、生成下载及仓库入口 **4 passed**，移动端布局调整后仓库入口 **2 passed** 再验证。此前全量浏览器 **7 passed / 1 skipped** 和认证主动评测 **1 passed** 属于当时验证范围。
 - 网页、0.3.0 wheel 和 skill 内置引擎均已重建并验证。包版本未变，启动器以内容哈希区分不同构建，主动评测记录另有执行器源码哈希。
 - 未修改原有 `.agent-review/`。实现和验证使用独立临时数据目录。
 
@@ -22,9 +26,9 @@
 3. 文档转换能力评估：优先 PDF/扫描文档 → Markdown/JSON，暂不做 Office → PDF 排版保真。
 4. 面向比赛部署的评审 Agent：已知对方开源仓库时，收集源码声明与证据，通过实际任务测量目标服务，并导出可核查报告。
 
-用户选择先用示例跑通，再接真实 Agent。尚未提供真实被测 Agent 仓库或真实 OpenCode 导出数据。本轮没有运行真实第三方 Agent、调用付费 API 或下载完整基准数据集。
+用户选择先用示例跑通，再接真实 Agent。现已选用 smolagents 1.26.0，并完成脚本模型接入校准及真实模型测试。用户指定 DeepSeek，地址为 `https://api.deepseek.com`，模型为 `deepseek-flash`；已在本机 `.env` 填写密钥并授权启动测试。两次真实评测均通过，费用未返回。未提供真实 OpenCode 导出数据，未下载完整基准数据集。
 
-用户已同意 Task 2 使用 Docker，并授权缺少时下载官方 `python:3.12-slim`。当前本机 daemon 和镜像可用。Runner 本身不会自动下载镜像；新机器需先准备环境。
+用户已同意使用 Docker，当前本机 daemon 和镜像可用。固定镜像 Runner 不自动下载镜像；新的仓库构建流程会按 Dockerfile 下载基础镜像和依赖，新机器需先准备 Git 与 Docker。
 
 OpenCode 是过程数据来源，可与代码修复或文档转换的结果验收组合，不是互斥任务类型。按阶段推进，无需把全部模块立即部署上线。
 
@@ -183,7 +187,27 @@ uv run agent-review serve --data-dir ./review-data \
 
 ### 接续范围
 
-第一版服务已具备完整受控评测闭环。下一阶段根据真实比赛协议接入参赛 Agent：目前尚无真实目标、完整 A2A、源码自动构建与可信镜像绑定、官方基准评分、通用工具故障注入、分布式队列或统计置信区间。源码关联不是因果证明，控制样例不是比赛成绩。
+第一版服务已具备完整受控评测闭环，受支持仓库可以自动构建并记录本机观察到的源码/镜像绑定。下一阶段根据真实比赛协议接入参赛 Agent：目前尚无真实参赛目标、完整 A2A、第三方构建签名认证、官方基准评分、通用工具故障注入、分布式队列或统计置信区间。私有仓库、任意仓库的零配置适配及恶意多租户构建隔离尚未支持。smolagents 起步目标及真实模型测试见下文。源码关联不是因果证明，控制样例不是比赛成绩。
+
+### smolagents 起步目标（2026-10-04）
+
+操作见 [examples/smolagents/README.md](examples/smolagents/README.md)，验证及归档见 [examples/smolagents/VALIDATION.zh-CN.md](examples/smolagents/VALIDATION.zh-CN.md)。本例固定 smolagents `1.26.0`，上游提交 `12c1bc820eca50ace6f80a21d90426d41d74f845`；源码在忽略目录 `tmp/third-party/smolagents`，依赖使用独立 `.venv` 和锁文件。
+
+`agent_server.py` 提供真实 `ToolCallingAgent` 与三个固定工具，支持 `offline`/`openai` 两种后端。登记表检查健康响应的 backend，避免将脚本模型作为真实模型成绩；固定题集验证算术、两步调用、多轮记忆、隔离及公开输入干扰。用量按本轮模型调用统计，内部工具材料标记目标自报，HTTP 轨迹保持 partial。
+
+已实际完成本地 HTTP 校准 `assessment_2dd4b8cc8282458a82831e0433280ab2`，6/6 pass、demo=true；当时适配层测试 7 passed。后续 DeepSeek 参数更新及 SDK 协议测试通过后，最新为 8 passed、Ruff 通过。官方 DeepSeek 域名显式关闭 thinking，兼容当前框架的 `tool_choice=required`；其他提供商不受影响。原 `.agent-review` 未修改。此次仅新增独立示例与文档，核心 wheel/skill 未重建。
+
+用户随后配置本机密钥并授权启动测试，实际 deepseek-flash 单题 `assessment_3a5cbb9a7bb74143ab4e555553763c22` 为 1/1 pass，完整题集 `assessment_5b27fb7af4ba4ba9a69d373d7e714515` 为 6/6 pass；两者 demo=false。完整评测自报 24898 Token，费用 unknown。报告在 `review-data-smolagents/reports/`，数据库与工件使用同一个绝对 data-dir；该目录已忽略，六份导出均检查没有 API 密钥回显。
+
+当前服务按用户要求保持运行：目标 PID 22789/9091（exec session 1529），评审为更新后的 PID 23949/8765（exec session 27912）；旧评审 PID 22792 已正常结束。网页 `http://127.0.0.1:8765/#/assessments`。重新启动前先检查端口与进程，不要重复启动。停止时仅结束本轮对应进程；不要输出 `.env` 内容。实际服务状态仍需现场检查。
+
+### 自动生成测试文件（2026-10-04）
+
+用户询问能否自动生成测试文件，现已为当前 smolagents 约定实现 `suite_generation.py`、`SuiteGenerationInput`、`generate-suite` CLI 和 `/api/assessment-suites/generate` API。网页新增案例数/种子输入、生成、JSON 预览/下载，生成的题集可直接开始评测。生成不访问目标或模型，标准答案由程序计算；每案例默认 30 秒与 2048 output Token，种子范围 0–2147483647，案例数 1–30，CLI 拒绝覆盖文件。
+
+默认 12 题文件在 `examples/smolagents/suite.generated.json`。最大 30 题实际校准 `assessment_4074be29f4dd4e5da3ba8b330be9e82a` 为 30/30 pass、demo=true；报告在 `examples/smolagents/verified/generated.offline.md`。完整记录见 [SUITE_GENERATION_VALIDATION.zh-CN.md](SUITE_GENERATION_VALIDATION.zh-CN.md)。测试、网页、wheel、项目内 Skill 均已刷新。临时服务 18765/9092 已清理，原 `.agent-review` 未修改。
+
+当前仅有 smolagents 模板；尚未实现根据任意仓库/接口用模型自动生成测试草稿。用户的可选范围澄清尚未回复，默认按当前目标实现。不要把此模板描述为通用仓库智能出题或任意正确答案推断。
 
 ## 6. 环境与复现
 
@@ -227,7 +251,9 @@ REVIEW_TEST_URL=http://127.0.0.1:18765 REVIEW_CODE_REPAIR_FIXTURES=1 npm --prefi
 阅读 HANDOFF.zh-CN.md、docs/ACTIVE_ASSESSMENT.zh-CN.md 和 ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md。
 Task 1/2/3 受控示例及 Task 4 第一版主动评测服务已完成。
 当前目录没有 .git；GitHub 已发布此前实现，提交使用独立克隆，以本地当前源码核对远端状态。
-下一阶段按比赛要求适配真实 Agent、独立题集或构建来源；真实 Agent 尚未提供。
+阅读 examples/smolagents/README.md 和 examples/smolagents/VALIDATION.zh-CN.md。用户已配置 DeepSeek 密钥并授权真实测试：单题 1/1、完整题集 6/6 pass。服务本轮保持运行，继续前检查 9091/8765 状态，复用 review-data-smolagents 中的报告；不要打印凭据或无故重复付费测试。
+自动生成题集已支持网页/CLI/API，见 SUITE_GENERATION_VALIDATION.zh-CN.md；默认12题文件已生成，30题上限校准已通过。当前模板只适用于 smolagents 示例约定，不支持根据任意仓库用模型自动出题。
+下一阶段按比赛要求适配参赛 Agent、独立题集或构建来源。
 复用现有 trace/Profile/external 协议；区分模拟候选、实际验证和未覆盖维度。
 当前文档评估器只支持固定两页数字 PDF 和约定块 ID；不支持任意 PDF 自动对齐、OCR 或公式。
 不把转换器输出当作 ground truth，不把简化指标称为官方 TEDS/CDM。

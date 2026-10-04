@@ -6,7 +6,7 @@
 
 **第一次使用，建议按这个顺序：启动网页 → 加载通过示例 → 查看结果和证据 → 导入自己的数据。** 基础体验无需 OpenCode、Docker 或 API Token。
 
-如果你的目标是「部署一个评审其他 Agent 的 Agent」，安装后直接看 [主动评测快速开始](#active-assessment)。首版提供固定题集驱动的编排服务，真实目标需要适配项目的 HTTP 协议；当前不自动构建任意仓库，也不代表官方基准成绩。
+如果你的目标是「部署一个评审其他 Agent 的 Agent」，安装后直接看 [主动评测快速开始](#active-assessment)。也可使用 [仓库自动部署评测](docs/REPOSITORY_ASSESSMENT.zh-CN.md)：提交公开 GitHub 地址，自动接入 smolagents 或带部署清单的仓库，完成拉取、构建、部署和固定题集评测。
 
 - [1. 安装并启动](#start)
 - [2. 跑通第一个示例](#first-run)
@@ -17,7 +17,7 @@
 - [7. 进阶接口与开发](#advanced)
 - [8. 主动评测与服务部署](#active-assessment)
 
-> 当前包版本为 0.3.0。2026-10-03 已重建并验证 wheel 与 skill 内置引擎，包含代码修复、文档评估和主动评测功能。下面的源码启动方式同时提供可运行的示例与部署配置。
+> 当前包版本为 0.3.0。2026-10-04 已重建并验证 wheel 与 skill 内置引擎，包含代码修复、文档评估、主动评测及仓库自动部署评测。下面的源码启动方式同时提供可运行的示例与部署配置。
 
 <a id="start"></a>
 ## 1. 安装并启动
@@ -380,7 +380,7 @@ uv run python scripts/package_skill.py
 
 构建的 wheel 包含网页，安装后运行服务无需 Node.js。源码继续修改后，需执行最后一步刷新 Skill 内置引擎；启动器以 wheel SHA-256 区分同版本的不同构建。
 
-项目核心代码位于 `src/agent_trace_review/`，网页位于 `web/src/`，验证脚本位于 `scripts/`。主动评测服务采用单进程任务队列，支持登记的 HTTP 目标和已构建的固定 Docker 镜像；真实任务需要明确的题集和独立标准。
+项目核心代码位于 `src/agent_trace_review/`，网页位于 `web/src/`，验证脚本位于 `scripts/`。主动评测服务采用单进程任务队列，支持登记的 HTTP 目标、固定 Docker 镜像，以及受支持仓库的自动构建与部署；真实任务需要明确的题集和独立标准。
 
 <a id="active-assessment"></a>
 ## 8. 主动评测与服务部署
@@ -405,13 +405,30 @@ uv run agent-review serve --data-dir ./review-data \
 | 功能 | 实现方式 |
 | --- | --- |
 | 仓库能力档案 | 只读扫描固定 Git commit，记录 README 声明、入口/依赖/环境线索、文件哈希和行号 |
+| 仓库自动部署评测 | 公开 GitHub URL → 固定源码 → Docker 构建 → 健康检查 → 题集评测 → 报告与资源回收 |
 | 主动任务验收 | 通过 `agent-review/target-v1` 服务协议实际发题，标准答案留在评审端 |
+| 自动生成测试文件 | smolagents 模板按案例数和种子生成题目、独立答案与 Profile；网页预览/下载后可直接评测 |
 | 多轮、记忆、隔离、鲁棒性 | 配置多轮题目、是否提供历史消息及专项 Profile，每个案例使用独立 session |
 | 能力声明验证 | 将档案 claim_id 与案例关联，区分已支持、未满足、证据不足和未测试 |
 | 预算与重复测量 | 对固定题集运行多档期限/Token 请求预算，记录结果和自报用量；缺失保持未知 |
 | 源码与版本回归 | 报告关联固定源码位置，对比一致题集/执行器下的逐案例变化 |
 | 服务与部署 | 异步任务、取消、重启中断恢复、访问令牌、Dockerfile/Compose、固定镜像启动检查和清理 |
 
-真实目标需要管理员登记地址、固定仓库版本和环境变量名称，并实现 HTTP 适配入口。当前不自动构建任意仓库、不认证镜像与源码的来源绑定，也不把控制样例当作官方能力成绩。
+已部署目标可以继续由管理员登记；带清单的仓库与 smolagents 可用 `agent-review assess-repo https://github.com/huggingface/smolagents` 自动拉取、构建和评测。网页服务使用 `--enable-repository-builds` 启用仓库入口。该流程记录固定提交、构建输入及实际镜像；仍需要独立题集和 HTTP 适配约定，离线校准不代表官方能力成绩。
 
-详细配置、协议、题集规则、API、Docker 部署和限制见 [主动评测指南](docs/ACTIVE_ASSESSMENT.zh-CN.md)；本轮验证见 [专项验收记录](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)。
+详细配置、协议、题集规则、API、Docker 部署和限制见 [主动评测指南](docs/ACTIVE_ASSESSMENT.zh-CN.md)；最新验证见 [仓库自动部署验收](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)，此前服务验收见 [专项记录](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)。
+
+要实际接入一个简易开源 Agent，可使用 [smolagents 起步示例](examples/smolagents/README.md)。它提供固定工具、独立 HTTP 适配器和六道题，配置你自己的 OpenAI 兼容模型后即可测试回答、多步工具、记忆与隔离；无密钥的 offline 模式仅用于框架接入校准。
+
+### 自动生成题集
+
+主动评测页面提供「自动生成测试文件」：选择 smolagents 模板、案例数（1–30）及随机种子，点击「生成测试文件」，可预览题目/验收规则、下载 JSON，或直接点击「开始评测」。生成过程不调用模型；实际评测会使用被测 Agent 的额度。当前模板要求本项目 smolagents 示例的工具和 JSON 输出约定。
+
+CLI 可生成同样的文件：
+
+```sh
+uv run agent-review generate-suite --template smolagents --cases 12 --seed 42 \
+  --output ./my-tests/suite.json
+```
+
+题目覆盖加减乘、两步计算、记忆、新会话隔离及公开输入干扰。相同参数可复现相同题集，已有文件不会被覆盖。标准答案由程序独立计算；当前没有根据任意仓库生成通用题目的模型功能。

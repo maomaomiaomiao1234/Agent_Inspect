@@ -41,6 +41,15 @@ with tempfile.TemporaryDirectory(prefix="agent-review-wheel-") as temporary:
     assert detail["evaluation"]["outcome"] == "pass"
     assert "generic_trace" in client.get("/api/schema").json()
     assert "assessment_suite" in client.get("/api/schema").json()
+    assert "suite_generation_input" in client.get("/api/schema").json()
+    assert "repository_manifest" in client.get("/api/schema").json()
+    assert not client.get("/api/repository-builds").json()["enabled"]
+    from agent_trace_review.repository_jobs import smolagents_adapter
+
+    assert b"class AgentTarget" in smolagents_adapter()
+    generated = client.post("/api/assessment-suites/generate", headers={"X-Review-Request": "1"},
+                            json={"template": "smolagents", "cases": 7, "seed": 81})
+    assert generated.status_code == 200 and len(generated.json()["cases"]) == 7
     assert template.joinpath("evaluator.py").is_file()
     import httpx
 
@@ -79,4 +88,4 @@ with tempfile.TemporaryDirectory(prefix="agent-review-wheel-") as temporary:
                             transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"output": {"answer": 19}})))
     assert result["state"] == "completed" and result["results"][0]["outcome"] == "pass"
     print(f"Wheel API, UI, coding/generic imports, profiles, templates and mocked LLM review passed: {wheel.name}")
-    print("Wheel active assessment contracts, storage and HTTP adapter passed.")
+    print("Wheel active assessment contracts, storage, suite generation and HTTP adapter passed.")

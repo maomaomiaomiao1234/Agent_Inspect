@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, DownloadLink } from "./api-client";
+import { RepositoryAssessments } from "./repository-assessments";
 
 type Target = { id: string; repository_configured: boolean; managed: boolean; demo: boolean };
+type GeneratedSuite = { id: string; description: string; cases: { id: string; turns: unknown[] }[] };
 type Source = { path: string; line: number; url?: string };
 type Claim = Source & { id: string; capability: string; snippet: string; assessment_status?: string };
 type Repository = { id: string; commit: string | null; snapshot_kind: string; files: unknown[]; claims: Claim[]; limitations: string[] };
@@ -31,6 +33,9 @@ export function Assessments() {
   const [target, setTarget] = useState("");
   const [suite, setSuite] = useState<unknown>(null);
   const [suiteName, setSuiteName] = useState("");
+  const [generated, setGenerated] = useState<GeneratedSuite | null>(null);
+  const [caseCount, setCaseCount] = useState(12);
+  const [seed, setSeed] = useState(42);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selected, setSelected] = useState("");
   const [job, setJob] = useState<Job | null>(null);
@@ -79,6 +84,7 @@ export function Assessments() {
       <p>选择已登记的服务和固定题集，观察多轮任务、会话隔离与不同预算下的表现。</p>
     </div></div>
     {error && <div className="error-banner" role="alert">{error}</div>}
+    <RepositoryAssessments onOpen={id => { setSelected(id); setRefresh(v => v + 1); }} />
     <section className="standalone-panel assessment-guide">
       <h2>新建评测</h2>
       {!targets.length ? <p>尚未登记目标。管理员启动服务时使用 <code>--targets targets.json</code> 配置服务地址；README 提供可直接运行的控制 Agent。</p> : <>
@@ -87,7 +93,7 @@ export function Assessments() {
             {targets.map(t => <option key={t.id} value={t.id}>{t.id}{t.demo ? "（控制示例）" : ""}{t.managed ? " · Docker" : ""}</option>)}
           </select></label>
           <label>固定题集 JSON<input aria-label="固定题集 JSON" type="file" accept=".json,application/json" onChange={async e => {
-            const file = e.target.files?.[0]; setSuite(null); setSuiteName(""); setError("");
+            const file = e.target.files?.[0]; setSuite(null); setSuiteName(""); setGenerated(null); setError("");
             if (!file) return;
             try {
               if (file.size > 1024 * 1024) throw new Error("题集超过 1 MB。");
@@ -103,6 +109,35 @@ export function Assessments() {
             setRepository(await api<Repository>(`/targets/${encodeURIComponent(target)}/repository-profile`, { method: "POST" }));
           })}>扫描能力档案</button>
         </div>
+        <h3>自动生成测试文件</h3>
+        <div className="assessment-controls">
+          <label>测试模板<select aria-label="测试模板" disabled={busy}>
+            <option value="smolagents">smolagents 基础能力</option>
+          </select></label>
+          <label>案例数量<input aria-label="案例数量" type="number" min="1" max="30" step="1"
+            value={caseCount} onChange={e => setCaseCount(Number(e.target.value))} /></label>
+          <label>随机种子<input aria-label="随机种子" type="number" min="0" max="2147483647" step="1"
+            value={seed} onChange={e => setSeed(Number(e.target.value))} /></label>
+          <button disabled={busy || !Number.isInteger(caseCount) || caseCount < 1 || caseCount > 30
+            || !Number.isInteger(seed) || seed < 0 || seed > 2147483647} onClick={() => action(async () => {
+            const created = await api<GeneratedSuite>("/assessment-suites/generate", { method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ template: "smolagents", cases: caseCount, seed }) });
+            setGenerated(created); setSuite(created); setSuiteName(`${created.id}.json`);
+          })}>生成测试文件</button>
+          {generated && <button onClick={() => {
+            const url = URL.createObjectURL(new Blob([JSON.stringify(generated, null, 2) + "\n"], { type: "application/json" }));
+            const link = document.createElement("a"); link.href = url; link.download = `${generated.id}.json`;
+            link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }}>下载测试 JSON</button>}
+        </div>
+        <p className="scenario-note">生成无需模型额度。同一种子和案例数量可复现题目；标准答案由程序计算。
+          模板要求算术、保存代码、读取代码工具及示例的 JSON 输出约定。</p>
+        {generated && <div role="status"><p>已生成 {generated.cases.length} 个案例、
+          {generated.cases.reduce((total, item) => total + item.turns.length, 0)} 轮请求。
+          可下载保存，也可直接点击“开始评测”。</p>
+          <details><summary>预览题目和验收规则</summary><pre className="json-preview">{JSON.stringify(generated, null, 2)}</pre></details>
+        </div>}
         <p className="scenario-note">标准答案和验收规则留在评审端。评测会向登记的 Agent 发出请求，可能使用该 Agent 配置的模型额度。</p>
       </>}
     </section>

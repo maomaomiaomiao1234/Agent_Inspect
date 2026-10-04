@@ -24,6 +24,9 @@ agent-review = "agent_trace_review.cli:app"
 packages = ["src/agent_trace_review"]
 artifacts = ["src/agent_trace_review/static/**"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"examples/smolagents/agent_server.py" = "agent_trace_review/repository_templates/smolagents_agent.py"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

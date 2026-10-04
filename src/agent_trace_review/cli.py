@@ -7,9 +7,16 @@ from pathlib import Path
 import typer
 
 from .analysis import compare
-from .assessment_contracts import AssessmentSuite, TargetDefinition, TargetRequest, TargetResponse
+from .assessment_contracts import (
+    AssessmentSuite,
+    SuiteGenerationInput,
+    TargetDefinition,
+    TargetRequest,
+    TargetResponse,
+)
 from .assessment_store import AssessmentStore
 from .assessments import (
+    AssessmentManager,
     assessment_bundle,
     assessment_markdown,
     compare_assessments,
@@ -33,8 +40,12 @@ from .models import Evaluation, Run
 from .profiles import evaluate_profile, evaluator_request
 from .reports import markdown_report
 from .repositories import compare_repositories, inspect_repository
+from .repository_contracts import RepositoryAssessmentInput
+from .repository_jobs import RepositoryManager, repository_bundle
+from .repository_store import RepositoryJobStore
 from .service import ingest
 from .storage import Store
+from .suite_generation import generate_suite
 from .util import canonical
 
 app = typer.Typer(no_args_is_help=True, help="通用 agent / OpenCode 本地轨迹评估与自定义任务验收。")
@@ -259,6 +270,7 @@ def schema_contracts():
         "task_profile": TaskProfile.model_json_schema(),
         "evaluator_response": EvaluatorResponse.model_json_schema(),
         "assessment_suite": AssessmentSuite.model_json_schema(),
+        "suite_generation_input": SuiteGenerationInput.model_json_schema(),
         "target_definition": TargetDefinition.model_json_schema(),
         "target_request": TargetRequest.model_json_schema(),
         "target_response": TargetResponse.model_json_schema(),
@@ -321,6 +333,8 @@ def init_task(directory: Path, template: str = "invoice"):
 def serve(
     data_dir: Path = Path(".agent-review"), port: int = 8765, host: str = "127.0.0.1",
     targets: Path | None = None,
+    enable_repository_builds: bool = False,
+    repository_env: list[str] = typer.Option([], help="允许仓库目标使用的宿主机环境变量名；可重复。"),
 ):
     import uvicorn
 
@@ -328,7 +342,50 @@ def serve(
 
     if host not in {"127.0.0.1", "localhost", "::1"} and not os.environ.get("AGENT_REVIEW_SERVICE_TOKEN"):
         raise typer.BadParameter("监听非回环地址需要设置 AGENT_REVIEW_SERVICE_TOKEN。")
-    uvicorn.run(create_app(str(data_dir), targets_file=str(targets) if targets else None), host=host, port=port)
+    uvicorn.run(create_app(str(data_dir), targets_file=str(targets) if targets else None,
+                          enable_repository_builds=enable_repository_builds, repository_environment=tuple(repository_env)),
+                host=host, port=port)
+
+
+@app.command("assess-repo")
+def assess_repository(
+    repository_url: str, ref: str = "HEAD", recipe: str = "auto", manifest: str = "agent-review.json",
+    suite: Path | None = None, cases: int = typer.Option(12, min=1, max=30),
+    seed: int = typer.Option(42, min=0, max=2147483647), backend: str = "offline",
+    env: list[str] = typer.Option([], help="运行期环境变量 NAME=HOST_ENV；只传名称，不传密钥值。"),
+    data_dir: Path = Path(".agent-review"), output: Path | None = None,
+):
+    """拉取公开 GitHub 仓库，在 Docker 内构建并评测；auto 支持清单或 smolagents。"""
+    manager = None
+    repositories = None
+    try:
+        environment = {}
+        for mapping in env:
+            key, separator, value = mapping.partition("=")
+            if not separator or key in environment:
+                raise ValueError("env 需要不重复的 NAME=HOST_ENV。")
+            environment[key] = value
+        if suite and suite.stat().st_size > 1024 * 1024:
+            raise ValueError("Suite 超过 1 MB。")
+        request = RepositoryAssessmentInput(repository_url=repository_url, ref=ref, recipe=recipe,
+            manifest_path=manifest, generation=SuiteGenerationInput(cases=cases, seed=seed), backend=backend,
+            environment=environment, suite=AssessmentSuite.model_validate_json(suite.read_bytes()) if suite else None)
+        manager = AssessmentManager(Store(data_dir), {})
+        repositories = RepositoryManager(manager, enabled=True, allowed_environment=environment.values())
+        job = repositories.db.create(request)
+        typer.echo(f"仓库任务：{job['id']}；开始拉取、构建和评测。", err=True)
+        result = repositories.run(job["id"])
+        content = canonical(repositories.bundle(job["id"]))
+        output.write_text(content) if output else typer.echo(content)
+        if result["state"] != "completed":
+            raise typer.Exit(1)
+    except (ValueError, OSError):
+        raise typer.BadParameter("无法发起仓库评测；检查公开 GitHub 地址、配置、题集和环境变量映射。") from None
+    finally:
+        if repositories:
+            repositories.close()
+        if manager:
+            manager.close()
 
 
 @app.command("repo-inspect")
@@ -343,6 +400,36 @@ def repo_inspect(
         output.write_text(content) if output else typer.echo(content)
     except (ValueError, OSError):
         raise typer.BadParameter("无法读取仓库版本；检查路径、ref、源码 URL 和扫描上限。") from None
+
+
+@app.command("repository-jobs")
+def repository_jobs(data_dir: Path = Path(".agent-review")):
+    """列出仓库任务，不执行恢复或重放。"""
+    for job in RepositoryJobStore(Store(data_dir)).list():
+        typer.echo(f"{job['id']}  {job['state']}  {job['stage']}  {job['request']['repository_url']}")
+
+
+@app.command("repository-cancel")
+def repository_cancel(job_id: str, data_dir: Path = Path(".agent-review")):
+    """请求取消仓库拉取/构建/评测；后台执行器完成资源清理。"""
+    try:
+        store = Store(data_dir)
+        job = RepositoryJobStore(store).cancel(job_id)
+        if job["assessment_id"]:
+            AssessmentStore(store).cancel(job["assessment_id"])
+        typer.echo(canonical(job))
+    except KeyError:
+        raise typer.BadParameter("仓库任务不存在。") from None
+
+
+@app.command("repository-report")
+def repository_report(job_id: str, data_dir: Path = Path(".agent-review"), output: Path | None = None):
+    """导出阶段日志、构建来源和评测证据包；不启动目标。"""
+    try:
+        content = canonical(repository_bundle(Store(data_dir), job_id))
+        output.write_text(content) if output else typer.echo(content)
+    except (KeyError, OSError):
+        raise typer.BadParameter("无法导出；检查仓库任务 ID 和输出路径。") from None
 
 
 @app.command("repo-compare")
@@ -361,6 +448,7 @@ def assess(
     data_dir: Path = Path(".agent-review"), output: Path | None = None,
 ):
     """向登记的真实 HTTP 目标发起固定多轮任务；标准答案留在评审端。"""
+    manager = None
     try:
         registry = load_targets(targets)
         if target_id not in registry:
@@ -368,7 +456,8 @@ def assess(
         if suite.stat().st_size > 1024 * 1024:
             raise ValueError("Suite 超过 1 MB。")
         contract = AssessmentSuite.model_validate_json(suite.read_bytes())
-        db = AssessmentStore(Store(data_dir))
+        manager = AssessmentManager(Store(data_dir), registry)
+        db = manager.db
         target = registry[target_id]
         job, repository = prepare_assessment(db, target, contract)
         result = run_assessment(db, job["id"], target, contract, repository)
@@ -378,6 +467,27 @@ def assess(
             raise typer.Exit(1)
     except (ValueError, OSError):
         raise typer.BadParameter("无法启动评测；检查目标登记、Suite、源码引用和队列容量。") from None
+    finally:
+        if manager:
+            manager.close()
+
+
+@app.command("generate-suite")
+def generate_assessment_suite(
+    output: Path = Path("suite.generated.json"), template: str = "smolagents",
+    cases: int = typer.Option(12, min=1, max=30), seed: int = typer.Option(42, min=0, max=2147483647),
+):
+    """生成 smolagents 测试题集与独立答案；不调用模型，不覆盖已有文件。"""
+    try:
+        suite = generate_suite(SuiteGenerationInput(template=template, cases=cases, seed=seed))
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("x", encoding="utf-8") as stream:
+            stream.write(json.dumps(suite.model_dump(), ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+        typer.echo(str(output.resolve()))
+    except FileExistsError:
+        raise typer.BadParameter("输出文件已存在，请选择新文件名以保留已有题集。") from None
+    except (ValueError, OSError):
+        raise typer.BadParameter("无法生成题集；template 需为 smolagents，并检查案例数、seed 与输出路径。") from None
 
 
 @app.command("assessments")

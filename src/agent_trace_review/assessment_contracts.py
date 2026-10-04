@@ -72,6 +72,7 @@ class DockerDeployment(Contract):
     memory_mb: int = Field(default=512, ge=64, le=8192, strict=True)
     cpus: float = Field(default=1, ge=0.1, le=8)
     environment: dict[str, str] = Field(default_factory=dict, max_length=20)
+    service_token_variable: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,99}$")
 
     @model_validator(mode="after")
     def env_names(self):
@@ -84,6 +85,8 @@ class DockerDeployment(Contract):
             for k, v in self.environment.items()
         ):
             raise ValueError("environment 只接受容器变量名到宿主机变量名的映射。")
+        if self.service_token_variable in self.environment:
+            raise ValueError("自动生成的服务令牌不能被 environment 覆盖。")
         return self
 
 
@@ -151,3 +154,9 @@ class TargetResponse(Contract):
 class AssessmentInput(Contract):
     target_id: str = Field(pattern=ID)
     suite: AssessmentSuite
+
+
+class SuiteGenerationInput(Contract):
+    template: Literal["smolagents"] = "smolagents"
+    cases: int = Field(default=12, ge=1, le=30, strict=True)
+    seed: int = Field(default=42, ge=0, le=2147483647, strict=True)

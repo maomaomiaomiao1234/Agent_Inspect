@@ -1,0 +1,14 @@
+[
+  {
+    "id": "smolagents-model",
+    "endpoint": "http://127.0.0.1:9091",
+    "task_path": "/task",
+    "health_path": "/health",
+    "health_status_field": "backend",
+    "health_status_value": "openai",
+    "repository": "tmp/third-party/smolagents",
+    "ref": "12c1bc820eca50ace6f80a21d90426d41d74f845",
+    "repository_url": "https://github.com/huggingface/smolagents",
+    "demo": false
+  }
+]

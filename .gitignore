@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info/
 .agent-review/
 review-data/
+review-data-smolagents/
 .claude/
 tmp/
 node_modules/

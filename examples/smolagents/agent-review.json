@@ -1,0 +1,13 @@
+{
+  "manifest_version": "agent-review/repository-v1",
+  "context": "examples/smolagents",
+  "dockerfile": "Dockerfile",
+  "port": 9091,
+  "health_path": "/health",
+  "health_status_field": "backend",
+  "health_status_value": "offline",
+  "service_token_variable": "SMOL_SERVICE_TOKEN",
+  "memory_mb": 1024,
+  "test_template": "smolagents",
+  "demo": true
+}

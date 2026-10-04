@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 
 test("active HTTP assessment, fixed suite, evidence and export", async ({ page, request }) => {
   const headers = process.env.REVIEW_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.REVIEW_SERVICE_TOKEN}` } : {};
@@ -38,4 +39,38 @@ test("active HTTP assessment, fixed suite, evidence and export", async ({ page, 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   await page.screenshot({ path: "/private/tmp/agent-review-assessment-mobile.png", fullPage: true });
   expect(errors).toEqual([]);
+});
+
+test("generate and download reusable test JSON without submitting an assessment", async ({ page, request }) => {
+  const headers = process.env.REVIEW_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.REVIEW_SERVICE_TOKEN}` } : {};
+  const targets = await request.get("/api/targets", { headers });
+  test.skip(targets.status() !== 200 || !(await targets.json()).length, "Start scripts/serve_assessment_test.py first");
+  await page.goto("/#/assessments");
+  if (process.env.REVIEW_SERVICE_TOKEN) {
+    await page.getByLabel("服务访问令牌").fill(process.env.REVIEW_SERVICE_TOKEN);
+    await page.getByRole("button", { name: "连接服务" }).click();
+  }
+  const submissions: string[] = [];
+  page.on("request", event => {
+    if (event.method() === "POST" && new URL(event.url()).pathname === "/api/assessments") submissions.push(event.url());
+  });
+  await page.getByLabel("案例数量").fill("7");
+  await page.getByLabel("随机种子").fill("81");
+  await page.getByRole("button", { name: "生成测试文件", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("已生成 7 个案例、8 轮请求");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载测试 JSON", exact: true }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("smolagents-generated-81-7.json");
+  const suite = JSON.parse(await readFile((await file.path())!, "utf-8"));
+  expect(suite.suite_version).toBe("agent-review/assessment-v1");
+  expect(suite.cases).toHaveLength(7);
+  expect(suite.cases.every((item: { profile: { rules: unknown[] } }) => item.profile.rules.length >= 2)).toBeTruthy();
+  await expect(page.getByRole("button", { name: "开始评测 · smolagents-generated-81-7.json", exact: true })).toBeEnabled();
+  expect(submissions).toEqual([]);
+  await page.getByText("预览题目和验收规则", { exact: true }).click();
+  await expect(page.locator(".json-preview")).toContainText('"profile"');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
+  await page.screenshot({ path: "/private/tmp/agent-review-generation-mobile.png", fullPage: true });
 });

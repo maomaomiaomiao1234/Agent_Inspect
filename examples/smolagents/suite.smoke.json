@@ -1,0 +1,18 @@
+{
+  "suite_version": "agent-review/assessment-v1",
+  "id": "smolagents-smoke",
+  "version": "1",
+  "description": "单个算术案例，确认真实模型 API、工具调用和 JSON 输出兼容后再运行完整题集。",
+  "attempts": 1,
+  "budgets": [{"id": "smoke", "deadline_seconds": 60, "max_output_tokens": 1024}],
+  "cases": [
+    {
+      "id": "addition", "category": "capability",
+      "turns": [{"prompt": "Compute 12 + 7. Return JSON with the field answer."}],
+      "profile": {"profile_version": "1", "id": "addition", "rules": [
+        {"id": "present", "op": "exists", "path": "/output/answer"},
+        {"id": "correct", "op": "equals", "path": "/output/answer", "value": 19}
+      ]}
+    }
+  ]
+}
