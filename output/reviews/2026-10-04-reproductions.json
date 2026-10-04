@@ -1,0 +1,49 @@
+{
+  "smolagents_full_history": {
+    "outcome": "inconclusive",
+    "execution_state": "error",
+    "error": "http_422"
+  },
+  "smolagents_current_history_control": {
+    "outcome": "pass",
+    "execution_state": "completed",
+    "error": null
+  },
+  "partial_usage_budget": {
+    "requested_budgets": [
+      5,
+      5,
+      5
+    ],
+    "reported_output_tokens_lower_bound": 12,
+    "outcome": "pass",
+    "execution_state": "completed",
+    "usage": {
+      "cost_usd": null,
+      "output_token_budget": "unknown",
+      "provenance": "target_reported",
+      "total_tokens": null
+    }
+  },
+  "missing_protocol": {
+    "outcome": "pass",
+    "execution_state": "completed",
+    "error": null
+  },
+  "crash_recovery": {
+    "simulation": true,
+    "child_exit": 23,
+    "job_state": "interrupted",
+    "container_still_running": true,
+    "persisted_deployment_fields": [
+      "build_labels",
+      "health",
+      "image_id",
+      "mode",
+      "policy",
+      "source_binding",
+      "startup_seconds",
+      "status"
+    ]
+  }
+}
