@@ -56,6 +56,18 @@ export type Task = {
   "allowed_paths": Array<string>;
 }
 
+export type UsageField = {
+  "value"?: number | number | null;
+  "status": "complete" | "partial" | "unknown" | "not_applicable";
+  "source": "aggregate" | "calls" | "mixed" | "none" | "offline";
+  "reason": string;
+}
+
+export type UsageSummary = {
+  "provenance"?: "target_reported" | "exporter_reported";
+  "fields": Record<string, UsageField>;
+}
+
 export type Verification = {
   "id": string;
   "check_id": string | null;
@@ -101,6 +113,7 @@ export type Run = {
   "evidence": Array<Evidence>;
   "verifications": Array<Verification>;
   "usage": Array<Record<string, unknown>>;
+  "usage_summary": UsageSummary | null;
   "diff": string;
   "diff_provided": boolean;
   "diff_artifact": string | null;
@@ -132,7 +145,7 @@ export type Metric = {
   "label": string;
   "value": number | number | string | null;
   "unit": string;
-  "status": "observed" | "derived" | "partial" | "unknown";
+  "status": "observed" | "derived" | "partial" | "unknown" | "not_applicable";
   "evidence_ids": Array<string>;
   "note": string;
 }

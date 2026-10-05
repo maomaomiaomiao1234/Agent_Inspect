@@ -1,0 +1,142 @@
+"""Actual Docker pipeline check with synthetic generation/model HTTP APIs; no paid calls.
+
+The checkout is a local, explicitly synthetic Python repository. This verifies Docker,
+native entry observation, task protocol, telemetry and cleanup, not LLM generation quality.
+"""
+
+import argparse
+import ast
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from unittest.mock import patch
+
+from agent_trace_review.assessment_contracts import AssessmentSuite
+from agent_trace_review.assessments import AssessmentManager
+from agent_trace_review.repository_contracts import RepositoryAssessmentInput
+from agent_trace_review.repository_jobs import RepositoryManager
+from agent_trace_review.storage import Store
+from agent_trace_review.util import canonical
+
+NATIVE = '''import json
+import httpx
+
+class NativeAgent:
+    def __init__(self, config):
+        self.config = config
+
+    def calculate(self, a, b):
+        return a + b
+
+    def run(self, request, recorder):
+        body = {"model": self.config["model"], "messages": request["messages"], "max_tokens": 1000}
+        with httpx.Client() as client:
+            response = client.post(self.config["api_url"] + "/chat/completions", json=body,
+                headers={"Authorization": "Bearer " + self.config["api_key"]})
+            response.raise_for_status()
+            output = json.loads(response.json()["choices"][0]["message"]["content"])
+        if "a" in request["input"]:
+            output["answer"] = recorder.tool("calculator", self.calculate, request["input"]["a"], request["input"]["b"])
+        return output
+'''
+BRIDGE = '''from native_agent import NativeAgent
+def create_agent(config, recorder):
+    return NativeAgent(config)
+def run_agent(agent, request, recorder):
+    return agent.run(request, recorder)
+'''
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data-dir", type=Path)
+    args = parser.parse_args()
+    data_dir = args.data_dir or Path(tempfile.mkdtemp(prefix="agent-inspect-auto-adapt-validation-"))
+    counters = {"generation": 0, "target": 0}
+    definition = next(n for n in ast.walk(ast.parse(NATIVE)) if isinstance(n, ast.FunctionDef) and n.name == "run")
+    proposal = {"supported": True, "entry": {"path": "native_agent.py", "symbol": "NativeAgent.run", "line": definition.lineno},
+                "bridge_code": BRIDGE, "limitations": ["Synthetic validation fixture, not third-party capability scores."]}
+
+    class Provider(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+            generation = self.path.startswith("/generate/")
+            counters["generation" if generation else "target"] += 1
+            content = canonical(proposal) if generation else canonical({"ready": True} if "ready=true" in body["messages"][-1]["content"] else {"answer": 19})
+            usage = {"prompt_tokens": 100, "completion_tokens": 200, "total_tokens": 300} if generation else {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+            result = canonical({"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": content}}], "usage": usage}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(result)))
+            self.end_headers()
+            self.wfile.write(result)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("0.0.0.0", 0), Provider)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    manager = repositories = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="agent-inspect-native-fixture-") as temp:
+            source = Path(temp)
+            (source / "native_agent.py").write_text(NATIVE)
+            (source / "README.md").write_text("Synthetic native Python agent for integration validation only.\n")
+            subprocess.run(["git", "init", "--quiet", str(source)], check=True)
+            subprocess.run(["git", "-C", str(source), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(source), "-c", "user.name=Validation", "-c", "user.email=validation@example.invalid", "commit", "-qm", "synthetic native agent"], check=True)
+            commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"]).decode().strip()
+            def checkout(request, destination, command):
+                shutil.copytree(source, destination)
+                return commit
+            settings = {"AGENT_REVIEW_LLM_API_URL": f"http://127.0.0.1:{server.server_port}/generate",
+                "AGENT_REVIEW_LLM_MODEL": "synthetic-generator", "AGENT_REVIEW_LLM_TOKEN": "synthetic-generator-key",
+                "AGENT_REVIEW_TARGET_API_URL": f"http://host.docker.internal:{server.server_port}/v1",
+                "AGENT_REVIEW_TARGET_MODEL": "synthetic-target-model", "AGENT_REVIEW_TARGET_TOKEN": "synthetic-target-key",
+                "AGENT_REVIEW_AUTO_ADAPT": "true"}
+            suite = AssessmentSuite.model_validate({"id": "native-addition", "cases": [{"id": "sum",
+                "turns": [{"prompt": "Compute 12 + 7. Return JSON with answer."}], "input": {"a": 12, "b": 7},
+                "profile": {"profile_version": "1", "id": "native-addition", "rules": [
+                    {"id": "correct", "op": "equals", "path": "/output/answer", "value": 19},
+                    {"id": "calculator", "op": "tool_required", "value": "calculator", "dimension": "behavior"}]}}],
+                "budgets": [{"id": "default", "deadline_seconds": 30, "max_output_tokens": 100}]})
+            with patch.dict(os.environ, settings), patch("agent_trace_review.repository_jobs.checkout_repository", checkout):
+                manager = AssessmentManager(Store(data_dir), {})
+                repositories = RepositoryManager(manager, enabled=True)
+                job = repositories.db.create(RepositoryAssessmentInput(repository_url="https://github.com/example/synthetic-native-agent",
+                    backend="auto", suite=suite, adaptation={"max_repairs": 0}))
+                result = repositories.run(job["id"])
+                bundle = repositories.bundle(job["id"])
+                destination = data_dir / "validation.bundle.json"
+                destination.write_text(canonical(bundle))
+                assert result["state"] == "completed", result["error"]
+                assert result["cleanup"] == "completed"
+                row = bundle["assessment"]["job"]["results"][0]
+                assert row["outcome"] == "pass", row
+                assert row["usage"]["fields"]["total_tokens"]["value"] == 15
+                turns = bundle["assessment"]["runs"][0]["bundle"]["trace"]["artifacts"]["assessment"]["turns"]
+                assert turns[0]["adapter_evidence"]["observed"]
+                assert counters == {"generation": 1, "target": 2}
+                for value in ("synthetic-generator-key", "synthetic-target-key"):
+                    assert value not in destination.read_text()
+                print(canonical({"state": result["state"], "cleanup": result["cleanup"], "outcome": row["outcome"],
+                    "native_entry_observed": True, "target_tokens": row["usage"]["fields"]["total_tokens"],
+                    "requests": counters, "evidence": str(destination), "job_id": job["id"]}))
+    finally:
+        if repositories:
+            repositories.close()
+        if manager:
+            manager.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+if __name__ == "__main__":
+    main()

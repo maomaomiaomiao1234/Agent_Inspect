@@ -42,6 +42,7 @@ def test_arithmetic_uses_real_framework_tools_and_observations(client):
     assert execution["tools"][0]["tool"] == "calculator"
     assert execution["tools"][0]["output"] == {"answer": 41}
     assert "usage" not in body  # No invented inference Token or zero cost.
+    assert body["usage_mode"] == "offline"
     trace = body["trace"]
     assert trace["session_id"] == "example" and trace["turn"] == 0 and trace["coverage"] == "complete"
     assert [e["kind"] for e in trace["events"]] == ["llm", "tool", "llm", "tool"]
@@ -95,6 +96,7 @@ def test_target_auth_and_backend_identity(monkeypatch):
     monkeypatch.setenv("SMOL_SOURCE_COMMIT", "c" * 40)
     with TestClient(create_app(AgentTarget(), "local-service-test")) as client:
         assert client.get("/health").json()["backend"] == "offline"
+        assert client.get("/health").json()["usage_collection"] == "not_applicable"
         assert client.get("/health").json()["commit"] == "c" * 40
         assert client.post("/task", json=request("Compute 1 + 2.")).status_code == 401
         response = client.post(
@@ -242,7 +244,12 @@ def test_failed_tool_attempt_is_recorded_and_agent_can_recover(monkeypatch):
             self.calls = 0
 
         def generate(self, messages, **kwargs):
-            from smolagents.models import ChatMessage, ChatMessageToolCall, ChatMessageToolCallFunction, MessageRole
+            from smolagents.models import (
+                ChatMessage,
+                ChatMessageToolCall,
+                ChatMessageToolCallFunction,
+                MessageRole,
+            )
             self.calls += 1
             if self.calls <= 2:
                 name, args = "calculator", {"a": 1, "b": 2, "operation": "divide" if self.calls == 1 else "add"}

@@ -137,16 +137,17 @@ function MetricCard({ item }: { item?: Metric }) {
       <span>
         {item?.label || "—"} <CircleHelp size={12} />
       </span>
-      <strong>{fmt(item?.value, item?.unit)}</strong>
+      <strong>{item?.status === "not_applicable" ? "不适用" :
+        `${item?.status === "partial" && (item.unit === "tokens" || item.unit === "USD") && item.value != null ? "≥" : ""}${fmt(item?.value, item?.unit)}`}</strong>
       <small>
-        {item?.status === "partial"
+        {item?.status === "not_applicable" ? "离线校准" : item?.status === "partial"
           ? "部分可见"
           : item?.status === "unknown"
             ? "日志未提供"
             : item?.unit === "USD"
               ? "轨迹报告值"
               : item?.unit === "tokens"
-                ? "原生用量记录"
+                ? "上报用量记录"
                 : "来自执行证据"}
       </small>
     </div>
@@ -1434,6 +1435,7 @@ function RunDetail({
                         observed: "已观察",
                         partial: "部分可见",
                         unavailable: "不可用",
+                        not_applicable: "不适用（离线校准）",
                         unknown: "未知",
                       } as Record<string, string>
                     )[val.level]

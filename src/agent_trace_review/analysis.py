@@ -298,7 +298,7 @@ def analyze(run: Run) -> Evaluation:
                 label=label,
                 value=value,
                 unit=unit,
-                status="unknown" if value is None else status,
+                status="unknown" if value is None and status != "not_applicable" else status,
                 evidence_ids=list(dict.fromkeys(refs or ["source"])),
                 note=note,
             )
@@ -396,6 +396,13 @@ def analyze(run: Run) -> Evaluation:
         ),
         ("cost_usd", "报告成本", lambda u: u.get("cost"), "USD"),
     ]:
+        summary_key = key if key == "cost_usd" else key.removeprefix("tokens_") + "_tokens"
+        if run.usage_summary and summary_key in run.usage_summary.fields:
+            field = run.usage_summary.fields[summary_key]
+            metric(key, label, field.value, ["usage-summary"], unit=unit,
+                   status="observed" if field.status == "complete" else field.status,
+                   note=f"{run.usage_summary.provenance} / {field.source}；{field.reason}")
+            continue
         values = [number(accessor(u)) for u in run.usage]
         available = [v for v in values if v is not None]
         metric(
@@ -454,7 +461,7 @@ def analyze(run: Run) -> Evaluation:
         ]
         if not run.trace_complete:
             for item in metrics:
-                if item.value is not None and item.status != "unknown":
+                if item.value is not None and item.status != "unknown" and "usage-summary" not in item.evidence_ids:
                     item.status = "partial"
     return Evaluation(
         id="eval_" + digest([corpus, VERSION])[:20],

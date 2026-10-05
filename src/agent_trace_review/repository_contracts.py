@@ -30,15 +30,29 @@ def relative_path(value: str) -> str:
     return value
 
 
+class RepositoryRunSettings(Contract):
+    deadline_seconds: float = Field(default=60, ge=0.05, le=60)
+    max_output_tokens: int = Field(default=2048, ge=1, le=100000, strict=True)
+    attempts: int = Field(default=1, ge=1, le=3, strict=True)
+    concurrency: int = Field(default=1, ge=1, le=4, strict=True)
+
+
+class RepositoryAdaptationSettings(Contract):
+    enabled: bool = True
+    max_repairs: int = Field(default=1, ge=0, le=2, strict=True)
+
+
 class RepositoryAssessmentInput(Contract):
     repository_url: str = Field(max_length=500)
     ref: str = Field(default="HEAD", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,199}$")
-    recipe: Literal["auto", "manifest", "smolagents"] = "auto"
+    recipe: Literal["auto", "manifest", "smolagents", "llm"] = "auto"
     manifest_path: str = Field(default="agent-review.json", max_length=300)
     generation: SuiteGenerationInput = Field(default_factory=SuiteGenerationInput)
     suite: AssessmentSuite | None = None
     planning: RepositoryPlanInput | None = None
-    backend: Literal["offline", "openai"] = "offline"
+    backend: Literal["auto", "offline", "openai"] = "offline"
+    settings: RepositoryRunSettings | None = None
+    adaptation: RepositoryAdaptationSettings = Field(default_factory=RepositoryAdaptationSettings)
     environment: dict[str, str] = Field(default_factory=dict, max_length=20)
 
     _url = field_validator("repository_url")(github_url)
@@ -48,6 +62,11 @@ class RepositoryAssessmentInput(Contract):
     def environment_names(self):
         if self.suite is not None and self.planning is not None:
             raise ValueError("自定义 suite 和源码 planning 只能选择一个。")
+        if self.suite is not None and self.settings is not None:
+            raise ValueError("上传的独立题集保留自身预算；settings 仅用于生成题集。")
+        cases = self.planning.cases if self.planning else self.generation.cases
+        if self.settings and cases * self.settings.attempts * self.settings.deadline_seconds > 900:
+            raise ValueError("案例数 × 重复次数 × 每案例期限不能超过 900 秒。")
         if any(not re.fullmatch(ENV_NAME, k) or not re.fullmatch(ENV_NAME, v) for k, v in self.environment.items()):
             raise ValueError("环境变量仅接受名称映射，不能包含密钥值。")
         return self

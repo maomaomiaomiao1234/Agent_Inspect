@@ -602,7 +602,8 @@ def test_api_active_job_auth_exports_and_registered_targets(
         assert client.get("/api/assessments/unknown", headers=headers).status_code == 404
 
 
-def test_cli_real_execution_and_report(tmp_path, suite, agent_server):
+def test_cli_real_execution_and_report(tmp_path, suite, agent_server, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     registry = tmp_path / "targets.json"
     registry.write_text(

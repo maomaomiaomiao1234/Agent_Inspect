@@ -258,7 +258,15 @@ def store_bytes(store):
 
 
 @pytest.fixture
-def pipeline(tmp_path, monkeypatch):
+def pipeline(tmp_path, monkeypatch, request):
+    if getattr(request, "param", None) == "model":
+        for prefix in ("AGENT_REVIEW_TARGET_", "SMOL_MODEL_", "AGENT_REVIEW_LLM_"):
+            for name in list(os.environ):
+                if name.startswith(prefix):
+                    monkeypatch.delenv(name)
+        monkeypatch.setenv("AGENT_REVIEW_TARGET_API_URL", "https://provider.example/v1")
+        monkeypatch.setenv("AGENT_REVIEW_TARGET_MODEL", "fixture-model")
+        monkeypatch.setenv("AGENT_REVIEW_TARGET_TOKEN", "fixture-model-secret")
     manager = AssessmentManager(Store(tmp_path / "data"), {})
     repositories = RepositoryManager(manager, enabled=True)
     def checkout(request, root, command):
@@ -329,6 +337,32 @@ def test_pipeline_source_plan_is_frozen_exported_and_scans_once(pipeline, monkey
     assert bundle["assessment"]["job"]["concurrency"] == 2
 
 
+@pytest.mark.parametrize("pipeline", ["model"], indirect=True)
+@pytest.mark.parametrize("source_plan", [False, True])
+def test_env_model_and_web_settings_reach_execution_and_exported_suite(pipeline, source_plan):
+    request = RepositoryAssessmentInput(
+        repository_url="https://github.com/huggingface/smolagents", backend="auto", generation={"cases": 2},
+        planning={"cases": 2, "attempts": 2, "concurrency": 2} if source_plan else None,
+        settings={"deadline_seconds": 20, "max_output_tokens": 1234, "attempts": 2, "concurrency": 2},
+    )
+    job = pipeline.db.create(request)
+    result = pipeline.run(job["id"])
+    assert result["state"] == "completed", result
+    assert result["request"]["backend"] == "openai"
+    assert result["request"]["environment"]["SMOL_MODEL_API_KEY"] == "AGENT_REVIEW_TARGET_TOKEN"
+    bundle = pipeline.bundle(job["id"])
+    suite = bundle["assessment"]["suite"]
+    assert suite["attempts"] == 2 and suite["concurrency"] == 2
+    assert suite["budgets"][0]["deadline_seconds"] == 20 and suite["budgets"][0]["max_output_tokens"] == 1234
+    assert bundle["assessment"]["job"]["planned"] == 4
+    turns = bundle["assessment"]["runs"][0]["bundle"]["trace"]["artifacts"]["assessment"]["turns"]
+    assert turns[0]["request"]["budget"]["max_output_tokens"] == 1234
+    if source_plan:
+        assert bundle["assessment_plan"]["suite"] == suite
+        assert bundle["assessment_plan"]["max_serial_deadline_seconds"] == 80
+    assert b"fixture-model-secret" not in store_bytes(pipeline.store)
+
+
 def test_pipeline_build_failure_keeps_logs_and_no_assessment(pipeline, monkeypatch):
     def fail(*args, **kwargs):
         raise RepositoryError("command_failed", "compiler failure fixture")
@@ -338,6 +372,89 @@ def test_pipeline_build_failure_keeps_logs_and_no_assessment(pipeline, monkeypat
     assert result["state"] == "failed" and result["failed_stage"] == "building"
     assert result["assessment_id"] is None and result["cleanup"] == "completed"
     assert "compiler failure" in pipeline.bundle(job["id"])["logs"][0]["text"]
+
+
+@pytest.mark.parametrize("pipeline", ["model"], indirect=True)
+@pytest.mark.parametrize("failure", [None, "build", "native", "unsupported", "cancel"])
+def test_llm_adaptation_pipeline_validates_repairs_exports_and_keeps_usage_separate(pipeline, monkeypatch, failure):
+    import agent_trace_review.repository_jobs as jobs
+    from agent_trace_review.repository_adaptation import AdaptationDraft
+
+    original_checkout = jobs.checkout_repository
+    def checkout(request, root, command):
+        original_checkout(request, root, command)
+        (root / "native.py").write_text("def run(request):\n    return {'answer': 19}\n")
+        (root / "agent-review.json").unlink()
+        subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(root), "-c", "user.name=Test", "-c", "user.email=test@example.org", "commit", "-qm", "native"], check=True)
+        return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"]).decode().strip()
+    monkeypatch.setattr(jobs, "checkout_repository", checkout)
+    generations = []
+    async def generate(materials, config, **kwargs):
+        generations.append({k: v for k, v in kwargs.items() if k != "cancelled"})
+        if failure == "cancel":
+            raise RepositoryError("cancel_requested")
+        proposal = AdaptationDraft(supported=failure != "unsupported", reason="Missing native requirements" if failure == "unsupported" else "",
+            entry={"path": "native.py", "symbol": "run", "line": 1},
+            bridge_code="from native import run\ndef create_agent(config, recorder):\n    return None\ndef run_agent(agent, request, recorder):\n    return run(request)\n")
+        return proposal, {"model": "generator-fixture", "usage": {"total_tokens": 500}, "cost_usd": None}, None
+    monkeypatch.setattr(jobs, "generate_adapter", generate)
+    build_calls = []
+    def build(argv, **kwargs):
+        build_calls.append(kwargs)
+        if failure == "build" and len(build_calls) == 1:
+            raise RepositoryError("command_failed", "synthetic compiler error fixture-model-secret")
+        Path(argv[argv.index("--iidfile") + 1]).write_text(IMAGE)
+        return "synthetic build complete"
+    monkeypatch.setattr(jobs, "run_process", build)
+    calls = []
+    validations = []
+    def execute(db, job_id, target, suite, repository, **kwargs):
+        body = db.job(job_id)
+        entry = body["build_provenance"]["native_entry"]
+        validation = body.get("purpose") == "adapter_validation"
+        if validation:
+            validations.append(job_id)
+        original = TargetDefinition(id=target.id, endpoint="http://fixture.invalid")
+        def respond(request):
+            calls.append((job_id, json.loads(request.content)))
+            observed = not (failure == "native" and len(validations) == 1)
+            return httpx.Response(200, json={"output": {"ready": True, "answer": 19}, "usage_mode": "model",
+                "adapter_evidence": {k: entry[k] for k in ("path", "symbol", "source_hash")} | {"observed": observed},
+                "usage": {"tokens": {"input": 10, "output": 5, "total": 15}}})
+        return run_assessment(db, job_id, original, suite, repository, transport=httpx.MockTransport(respond), **kwargs)
+    monkeypatch.setattr(jobs, "run_assessment", execute)
+    job = pipeline.db.create(RepositoryAssessmentInput(repository_url=URL, backend="auto", generation={"cases": 2}))
+    result = pipeline.run(job["id"])
+    bundle = pipeline.bundle(job["id"])
+    assert result["cleanup"] == "completed" and not (pipeline.work_root / job["id"]).exists()
+    assert b"fixture-model-secret" not in store_bytes(pipeline.store)
+    if failure in {"unsupported", "cancel"}:
+        assert result["state"] == ("cancelled" if failure == "cancel" else "failed")
+        assert not build_calls and result["assessment_id"] is None
+        assert len(bundle["adaptation"]["rounds"]) == 1
+        return
+    assert result["state"] == "completed", result
+    assert result["recipe"] == "llm"
+    assert len(bundle["adaptation"]["rounds"]) == (2 if failure else 1)
+    assert len(validations) == (2 if failure == "native" else 1)
+    assert len(bundle["adapter_validations"]) == len(validations)
+    assert bundle["assessment"]["job"]["planned"] == 2
+    assert bundle["assessment"]["job"]["curves"][0]["usage"]["fields"]["total_tokens"]["value"] == 30
+    assert bundle["adapter_validations"][-1]["job"]["curves"][0]["usage"]["fields"]["total_tokens"]["value"] == 15
+    assert bundle["assessment_plan"]["suite"] == bundle["assessment"]["suite"]
+    assert bundle["adaptation"]["rounds"][-1]["files"]["bridge.py"].startswith("from native import run")
+    import io
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(pipeline.adapter_archive(job["id"]))) as archive:
+        assert "bridge.py" in archive.namelist() and "source/native.py" not in archive.namelist()
+        assert json.loads(archive.read("provenance.json"))["status"] == "validated"
+        assert all(".env" != name for name in archive.namelist())
+    assert bundle["adaptation"]["generation_usage"]["fields"]["total_tokens"]["value"] == len(generations) * 500
+    assert "Profile" not in json.dumps(generations)
+    if failure:
+        assert generations[-1]["feedback"]["error"] in {"command_failed", "native_entry_not_observed"}
+        assert "fixture-model-secret" not in json.dumps(generations)
 
 
 def test_api_positive_pipeline_returns_result_and_download(pipeline, tmp_path):

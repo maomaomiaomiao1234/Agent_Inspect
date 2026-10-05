@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .models import Task, Verification
+from .usage_accounting import UsageSummary, usage_value
 
 
 class Contract(BaseModel):
@@ -77,6 +78,7 @@ class GenericTrace(Contract):
     start_ms: float | None = Field(None, ge=0)
     end_ms: float | None = Field(None, ge=0)
     coverage: Literal["complete", "partial"] = "partial"
+    usage_summary: UsageSummary | None = None
     events: list[TraceEvent] = Field(default_factory=list, max_length=100000)
     output: Any = None
     artifacts: dict[str, Any] = Field(default_factory=dict)
@@ -88,6 +90,17 @@ class GenericTrace(Contract):
             raise ValueError("通用轨迹 event.id 必须唯一；每次调用只能计入一次。")
         if self.start_ms is not None and self.end_ms is not None and self.end_ms < self.start_ms:
             raise ValueError("轨迹 end_ms 不能早于 start_ms。")
+        if self.usage_summary:
+            calls = [e for e in self.events if e.kind == "llm"]
+            for key, field in self.usage_summary.fields.items():
+                values = [usage_value(e.usage.model_dump() if e.usage else None, key) for e in calls]
+                known = [v for v in values if v is not None]
+                if known and (field.value is None or
+                              field.value is not None and field.value + 1e-8 < sum(known)):
+                    raise ValueError("用量摘要不能小于已报告调用，也不能将其标为不适用。")
+                if known and self.coverage == "complete" and len(known) == len(calls) and field.status == "complete":
+                    if abs(field.value - sum(known)) > 1e-8:
+                        raise ValueError("完整用量摘要与逐次调用不一致。")
         return self
 
 

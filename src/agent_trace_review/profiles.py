@@ -111,7 +111,13 @@ def rule_result(rule, context):
         return "unknown", "缺少此规则所需的输入材料。", []
     if rule.path.startswith("/metrics/"):
         key = rule.path.split("/")[2].replace("~1", "/").replace("~0", "~")
-        if context["metric_status"].get(key) in {None, "unknown", "partial"}:
+        status = context["metric_status"].get(key)
+        if (status == "partial" and (key.startswith("tokens_") or key == "cost_usd")
+                and rule.op == "max" and isinstance(actual, (int, float)) and actual > rule.value):
+            return "fail", "已观测用量下界已超过预算，缺失调用不会减少此消耗。", [rule.path]
+        if status == "not_applicable":
+            return "unknown", "此指标不适用；离线校准不能验证真实模型预算。", ["/metrics"]
+        if status in {None, "unknown", "partial"}:
             return "unknown", "指标缺失或仅部分可见，无法确认满足阈值。", ["/metrics"]
     if actual is not MISSING and (is_redacted(actual) or is_redacted(rule.value)):
         return "unknown", "比较内容经过脱敏，不能据此判断相等或满足条件。", [rule.path]

@@ -86,7 +86,7 @@ def markdown_report(run: Run, evaluation: Evaluation) -> str:
         "",
         "- 结果：按任务规则和匹配的验收材料判断；命令退出码 0 或 Agent 自报成功不代表任务完成。",
         "- 过程：诊断仅覆盖可见记录；没有触发规则不代表没有问题，也不是能力总分。",
-        "- 资源：区分 observed（观测）、derived（推导）、partial（部分）与 unknown（未知）；缺失不填零。",
+        "- 资源：区分 observed（观测）、derived（推导）、partial（部分）、unknown（未知）与 not_applicable（离线不适用）；缺失不填零。",
         "- 范围：单次运行不能代表 Agent 总体能力；证据不足时保留 inconclusive，不等同失败。",
         *(["- 示例不代表真实 Agent 能力；具体验证材料来源见记录。"] if run.demo else []),
         "",
@@ -96,9 +96,16 @@ def markdown_report(run: Run, evaluation: Evaluation) -> str:
         "| --- | --- | --- |",
     ]
     for metric in evaluation.metrics:
+        value = "不适用（离线校准）" if metric.status == "not_applicable" else (
+            ("≥" if metric.status == "partial" and metric.unit in {"tokens", "USD"} else "")
+            + str(metric.value) if metric.value is not None else "未知")
         lines.append(
-            f"| {metric.label} | {metric.value if metric.value is not None else '未知'} {metric.unit} | {metric.status} |"
+            f"| {metric.label} | {value} {metric.unit} | {metric.status} |"
         )
+    if run.usage_summary:
+        lines += ["", "### 用量来源与完整性", ""]
+        for key, field in run.usage_summary.fields.items():
+            lines.append(f"- {key}：{field.status} / {field.source}；{field.reason}")
     if isinstance(run.artifacts.get("source_description"), str):
         lines += ["", "材料来源声明：" + run.artifacts["source_description"], ""]
     if run.framework == "code-repair-fixture":

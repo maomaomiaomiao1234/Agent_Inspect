@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .usage_accounting import UsageSummary
+
 VERSION = "agent-review/0.3.0"
 
 
@@ -118,7 +120,7 @@ class Metric(Model):
     label: str
     value: int | float | str | None
     unit: str = ""
-    status: Literal["observed", "derived", "partial", "unknown"] = "observed"
+    status: Literal["observed", "derived", "partial", "unknown", "not_applicable"] = "observed"
     evidence_ids: list[str] = Field(default_factory=list)
     note: str = ""
 
@@ -162,6 +164,7 @@ class Run(Model):
     evidence: list[Evidence] = Field(default_factory=list)
     verifications: list[Verification] = Field(default_factory=list)
     usage: list[dict[str, Any]] = Field(default_factory=list)
+    usage_summary: UsageSummary | None = None
     diff: str = ""
     diff_provided: bool = False
     diff_artifact: str | None = None

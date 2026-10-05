@@ -26,6 +26,11 @@ def serve(host="127.0.0.1", port=9081):
                 pass
 
         def do_GET(self):
+            if self.path in {"/token-health", "/offline-health"}:
+                offline = self.path == "/offline-health"
+                self.send_json({"status": "ok", "fixture": True, "usage_mode": "offline" if offline else "model",
+                                "usage_collection": "not_applicable" if offline else "call_usage"})
+                return
             self.send_json({"status": "ok", "fixture": True})
 
         def do_POST(self):
@@ -55,7 +60,19 @@ def serve(host="127.0.0.1", port=9081):
                 output = {"answer": -1, "code": "WRONG", "stored": False}
             elif self.path == "/noop":
                 output = {}
-            self.send_json({"protocol": "agent-review/target-v1", "output": output})
+            body = {"protocol": "agent-review/target-v1", "output": output}
+            # Synthetic usage for UI accounting checks; never represents a provider bill.
+            if self.path.startswith("/token-"):
+                body["usage_mode"] = "offline" if self.path == "/token-offline" else "model"
+                if self.path != "/token-offline":
+                    events = [{"id": f"model-{i}", "kind": "llm", "model": "synthetic-ui-fixture",
+                               "status": "completed", "usage": {"tokens": {"input": 10, "output": 5, "total": 15}}}
+                              for i in range(2)]
+                    if self.path == "/token-partial":
+                        events[-1] = {"id": "model-1", "kind": "llm", "model": "synthetic-ui-fixture", "status": "error"}
+                        body.update(output=None, execution_status="error", error="agent_execution_failed")
+                    body["trace"] = {"session_id": session, "turn": request["turn"], "coverage": "complete", "events": events}
+            self.send_json(body)
 
     return ThreadingHTTPServer((host, port), Handler)
 

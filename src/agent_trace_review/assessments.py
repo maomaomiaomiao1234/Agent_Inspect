@@ -18,6 +18,7 @@ from .service_lock import ServiceLock
 from .storage import Store
 from .target_client import TargetClient, TargetError, deployed_target, scrub
 from .target_telemetry import telemetry_summary, trace_events
+from .usage_accounting import combine_usage, format_usage, summarize_usage
 from .util import canonical, digest, now
 
 
@@ -28,6 +29,8 @@ def engine_hash():
         "assessment_store.py",
         "target_client.py",
         "target_telemetry.py",
+        "usage_accounting.py",
+        "server_config.py",
         "repositories.py",
         "profiles.py",
         "generic.py",
@@ -39,6 +42,8 @@ def engine_hash():
         "repository_process.py",
         "source_tools.py",
         "repository_planning.py",
+        "repository_adaptation.py",
+        "repository_templates/auto_runtime.py",
         "assessment_quality.py",
     )
     root = Path(__file__).parent
@@ -67,6 +72,31 @@ def public_target(target: TargetDefinition):
         "repository_configured": target.repository is not None,
         "demo": target.demo,
     }
+
+
+def telemetry_readiness(target, *, transport=None):
+    """Only health-check an existing registered service; never start or call an agent."""
+    result = {"target_id": target.id, "usage_mode": "unknown", "collection": "unknown",
+              "provenance": "target_reported", "model": None}
+    if target.deployment:
+        return {**result, "status": "pending_deployment", "reason": "容器启动后才能检查目标的模式和采集声明。"}
+    try:
+        health = TargetClient(target, transport=transport).health()
+    except TargetError as exc:
+        return {**result, "status": "unavailable", "reason": f"健康检查未通过：{exc.code}"}
+    raw = health.get("response", {})
+    mode = raw.get("usage_mode", "unknown")
+    if mode not in {"model", "offline"}:
+        mode = "unknown"
+    collection = raw.get("usage_collection", "unknown")
+    if collection not in {"call_usage", "aggregate_usage", "not_applicable"}:
+        collection = "unknown"
+    reason = ("离线校准未调用模型服务，Token 统计不适用。" if mode == "offline" else
+              "目标声明已采集模型用量；实际完整性以每次返回的 usage 为准。" if collection in {"call_usage", "aggregate_usage"}
+              else "目标尚未声明模型模式或用量采集能力；健康检查不能证明 Token 已采集。")
+    model = raw.get("model")
+    return {**result, "status": health["status"], "usage_mode": mode, "collection": collection,
+            "model": model[:200] if isinstance(model, str) else None, "reason": reason}
 
 
 def prepare_assessment(db: AssessmentStore, target: TargetDefinition, suite: AssessmentSuite, *, repository=None):
@@ -152,34 +182,21 @@ def _sources(case, repository):
 
 
 def _usage(turns, budget, execution_complete=True):
-    usages = [t.get("usage") for t in turns]
-    complete = execution_complete and bool(usages) and all(u is not None for u in usages)
-    totals, outputs, costs = [], [], []
-    for usage in usages:
-        tokens = (usage or {}).get("tokens", {})
-        total = tokens.get("total")
-        if total is None and tokens.get("input") is not None and tokens.get("output") is not None:
-            total = tokens["input"] + tokens["output"]
-        totals.append(total)
-        outputs.append(tokens.get("output"))
-        costs.append((usage or {}).get("cost_usd"))
-    total_tokens = sum(totals) if complete and all(t is not None for t in totals) else None
-    cost = sum(costs) if complete and all(c is not None for c in costs) else None
+    summary = summarize_usage(turns, execution_complete)
+    output = summary["fields"]["output_tokens"]
     adherence = "not_requested"
     if budget.max_output_tokens:
         adherence = "unknown"
-        if sum(v for v in outputs if v is not None) > budget.max_output_tokens:
+        if output["value"] is not None and output["value"] > budget.max_output_tokens:
             adherence = "fail"
-        elif complete and all(v is not None for v in outputs):
-            adherence = "pass" if sum(outputs) <= budget.max_output_tokens else "fail"
+        elif output["status"] == "complete":
+            adherence = "pass"
+        elif output["status"] == "not_applicable":
+            adherence = "not_applicable"
     return {
-        "input_tokens": sum((u["tokens"]["input"] for u in usages))
-        if complete and all(u["tokens"]["input"] is not None for u in usages) else None,
-        "output_tokens": sum((u["tokens"]["output"] for u in usages))
-        if complete and all(u["tokens"]["output"] is not None for u in usages) else None,
-        "total_tokens": total_tokens,
-        "cost_usd": cost,
-        "provenance": "target_reported",
+        **{key: field["value"] if field["status"] == "complete" else None
+           for key, field in summary["fields"].items() if key != "reasoning_tokens"},
+        **summary,
         "output_token_budget": adherence,
     }
 
@@ -201,13 +218,9 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         messages.append({"role": "user", "content": turn.prompt})
         visible_messages = messages if turn.history == "full" else messages[-1:]
         request_budget = budget.model_copy(update={"deadline_seconds": remaining})
-        reported_outputs = [
-            t["usage"]["tokens"]["output"]
-            for t in turns
-            if t["usage"] and t["usage"]["tokens"]["output"] is not None
-        ]
         if budget.max_output_tokens:
-            available = budget.max_output_tokens - sum(reported_outputs)
+            used = summarize_usage(turns)["fields"]["output_tokens"]["value"]
+            available = budget.max_output_tokens - (used if used is not None else 0)
             if available <= 0:
                 state, error = "budget_exhausted", "output_token_budget_exhausted"
                 break
@@ -260,10 +273,13 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
                 "request": scrub(request, client.secrets),
                 "output": response.output,
                 "usage": response.usage.model_dump() if response.usage else None,
+                "usage_mode": response.usage_mode,
+                "aggregate_fields": sorted(response._aggregate_fields),
                 "latency_ms": round((time.monotonic() - sent_mono) * 1000, 3),
                 "trace": trace,
                 "execution_status": response.execution_status,
                 "error": response.error,
+                "adapter_evidence": response.adapter_evidence.model_dump() if response.adapter_evidence else None,
             }
         )
         events.extend(trace_events(trace, job_id=job_id, case_id=case.id, session_id=session, turn=index))
@@ -283,10 +299,17 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         if response.execution_status == "error":
             state, error = "error", response.error
             break
+        expected_entry = getattr(client, "required_entry", None)
+        if expected_entry and (not response.adapter_evidence or not response.adapter_evidence.observed or any(
+            getattr(response.adapter_evidence, key) != expected_entry[key] for key in ("path", "symbol", "source_hash")
+        )):
+            state, error = "error", "native_entry_not_observed"
+            break
     if cancelled():
         state, error = "cancelled", "cancel_requested"
     sources = _sources(case, repository)
     telemetry = telemetry_summary(turns, state == "completed")
+    usage = _usage(turns, budget, state == "completed")
     metadata = {
         "job_id": job_id,
         "suite_hash": digest(suite.model_dump()),
@@ -298,6 +321,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         "error": error,
         "turns": turns,
         "telemetry": telemetry,
+        "usage": usage,
         "source_evidence": sources,
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "repository_id": repository["id"] if repository else None,
@@ -312,6 +336,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         "events": events,
         "status": state,
         "coverage": "complete" if telemetry["coverage"] == "complete" else "partial",
+        "usage_summary": {key: usage[key] for key in ("provenance", "fields")},
         "demo": client.target.demo,
         "start_ms": start_wall,
         "end_ms": time.time() * 1000,
@@ -338,7 +363,7 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         "execution_state": state,
         "error": error,
         "duration_ms": round((time.monotonic() - started) * 1000, 3),
-        "usage": _usage(turns, budget, state == "completed"),
+        "usage": usage,
         "telemetry": telemetry,
         "source_evidence": sources,
         "checks": evaluation.custom["checks"],
@@ -355,10 +380,7 @@ def _summarize(body, suite, repository):
         planned = len(suite.cases) * suite.attempts
         passed = sum(r["outcome"] == "pass" for r in selected)
         failed = sum(r["outcome"] == "fail" for r in selected)
-        complete_usage = len(selected) == planned and all(
-            r["usage"]["total_tokens"] is not None for r in selected
-        )
-        complete_cost = len(selected) == planned and all(r["usage"]["cost_usd"] is not None for r in selected)
+        usage = combine_usage([r["usage"] for r in selected], expected=planned)
         body["curves"].append(
             {
                 "budget": budget.model_dump(),
@@ -371,10 +393,11 @@ def _summarize(body, suite, repository):
                 "mean_duration_ms": round(sum(r["duration_ms"] for r in selected) / len(selected), 3)
                 if selected
                 else None,
-                "reported_total_tokens": sum(r["usage"]["total_tokens"] for r in selected)
-                if complete_usage
-                else None,
-                "reported_cost_usd": sum(r["usage"]["cost_usd"] for r in selected) if complete_cost else None,
+                "reported_total_tokens": usage["fields"]["total_tokens"]["value"]
+                if usage["fields"]["total_tokens"]["status"] == "complete" else None,
+                "reported_cost_usd": usage["fields"]["cost_usd"]["value"]
+                if usage["fields"]["cost_usd"]["status"] == "complete" else None,
+                "usage": usage,
             }
         )
     if repository:
@@ -459,6 +482,7 @@ def run_assessment(db, job_id, target, suite, repository=None, *, transport=None
                 deployment["source_binding"] = "built_from_checkout"
             body["deployment"] = deployment
             client = TargetClient(target, endpoint, transport=transport, token_override=token)
+            client.required_entry = body.get("build_provenance", {}).get("native_entry")
             if target.health_path and not target.deployment:
                 body["health"] = client.health()
             db.update(job_id, body)
@@ -575,8 +599,8 @@ def assessment_markdown(job):
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for curve in job["curves"]:
-        tokens = curve["reported_total_tokens"] if curve["reported_total_tokens"] is not None else "未知"
-        cost = curve["reported_cost_usd"] if curve["reported_cost_usd"] is not None else "未知"
+        tokens = format_usage(curve.get("usage", {"total_tokens": curve["reported_total_tokens"]}), "total_tokens")
+        cost = format_usage(curve.get("usage", {"cost_usd": curve["reported_cost_usd"]}), "cost_usd")
         lines.append(
             f"|{curve['budget']['id']}|{curve['pass']}|{curve['fail']}|{curve['unknown']}|{curve['pass_rate']}%|{curve['mean_duration_ms']}|{tokens}|{cost}|"
         )
@@ -600,6 +624,7 @@ def assessment_markdown(job):
             lines.append(f"- {gap['kind']} {gap['name']}：{gap['status']}；{gap['path']}:{gap['line']}")
         evidence = quality["evidence"]
         lines += ["", f"- Token 已知的运行：{evidence['token_known_runs']}/{evidence['planned_runs']}",
+                  f"- Token 部分记录：{evidence.get('token_partial_runs', 0)}；离线不适用：{evidence.get('token_not_applicable_runs', 0)}",
                   f"- 未知的必需检查：{evidence['unknown_required_checks']}/{evidence['required_checks']}"]
         lines += [f"- {v}" for v in quality["limitations"]]
     lines += ["", "## 独立任务验收与源码线索", ""]
@@ -617,13 +642,18 @@ def assessment_markdown(job):
         def display(value):
             return "未知" if value is None else value
         lines += [
-            f"- 自报 Token：输入 {display(usage.get('input_tokens'))}；输出 {display(usage.get('output_tokens'))}；总计 {display(usage.get('total_tokens'))}",
+            f"- 自报 Token：输入 {format_usage(usage, 'input_tokens')}；输出 {format_usage(usage, 'output_tokens')}；总计 {format_usage(usage, 'total_tokens')}",
             f"- 自报调用：模型 {display(telemetry.get('llm_calls'))}；工具 {display(telemetry.get('tool_calls'))}；覆盖 {telemetry.get('coverage', 'unavailable')}",
             f"- 自报错误：模型 {display(telemetry.get('llm_errors'))}；工具 {display(telemetry.get('tool_errors'))}",
             f"- 自报调用耗时合计 ms：模型 {display(telemetry.get('llm_duration_ms'))}；工具 {display(telemetry.get('tool_duration_ms'))}",
         ]
+        for key in ("input_tokens", "output_tokens", "total_tokens", "cost_usd"):
+            field = usage.get("fields", {}).get(key)
+            if field:
+                lines.append(f"- {key}：{field['status']} / {field['source']}；{field['reason']}")
         for model in telemetry.get("models", []):
-            lines.append(f"- 模型 {model['model']}：{model['calls']} 次；Token {display(model['tokens']['total'])}；耗时 {display(model['duration_ms'])} ms")
+            model_usage = model.get("usage", {"total_tokens": model["tokens"]["total"]})
+            lines.append(f"- 模型 {model['model']}：{model['calls']} 次；Token {format_usage(model_usage, 'total_tokens')}；耗时 {display(model['duration_ms'])} ms")
         for source in result["source_evidence"]:
             location = f"{source['path']}:{source['line']}"
             if source.get("url"):

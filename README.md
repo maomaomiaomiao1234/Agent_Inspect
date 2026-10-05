@@ -6,11 +6,17 @@
 
 主动评测支持逐次模型和工具记录：模型名、输入/输出 Token、工具参数/结果、状态、耗时与任务关联，接入工具规则和错误恢复诊断。smolagents 示例已加入采集，其他 Agent 可输出相同协议；接入方法、根目录 `.env` 的加载和缺失数据说明见 [调用记录指南](docs/TARGET_TELEMETRY.zh-CN.md)。
 
+**适配范围：** smolagents 提供固定的内置配方，带部署清单的仓库按清单接入。未知 Python 仓库现在可使用服务端 LLM 自动生成适配器、Dockerfile 和清单，验证原入口调用后执行题集；失败时有限修复并保存原因。支持情况由实际构建和接入检查决定，不能保证任意仓库成功。已运行的 Agent 仍可接入 `target-v1`，离线日志可转换为通用轨迹。见 [自动适配指南](docs/AUTO_ADAPTATION.zh-CN.md)。
+
+**Token 统计：** 已按输入、输出、总量分别记录来源与完整性；完整数字、`≥已采集消耗`、未知、离线不适用分别展示。失败/超时/取消保留已有用量，顶层汇总与逐次记录不重复累计。网页可点击「检查 Token 采集」查看目标健康接口的模式和采集声明。仓库网页入口默认使用服务端配置的真实模型，离线模式可主动选择；重启更新后的服务并重新评测，才能获得新增诊断字段。历史缺失用量无法凭源码补算。探索与后续路线见 [Token 统计方案](docs/TOKEN_USAGE_EXPLORATION.zh-CN.md)。
+
+**网页直接评测仓库：** 在本机 `.env` 填好模型配置并启动 Docker，执行 `uv run agent-review serve`，打开 [主动评测页面](http://127.0.0.1:8765/#/assessments)，填入仓库链接，点击「拉取、部署并评测」。服务自动读取 `.env`、接入模型变量，并完成仓库构建、真实模型评测、统计与容器回收。网页可修改版本、案例数、种子、期限、输出 Token 上限、重复次数、并发和题集策略；未知 Python 仓库默认启用 LLM 自动适配，可关闭或调整修复次数。相关源码片段会发送给配置的适配模型，生成和接入检查 Token 与正式评测分开统计。操作见 [网页真实模型评测](docs/REPOSITORY_ASSESSMENT.zh-CN.md#网页直接运行真实模型评测)。
+
 **第一次使用，建议按这个顺序：启动网页 → 加载通过示例 → 查看结果和证据 → 导入自己的数据。** 基础体验无需 OpenCode、Docker 或 API Token。
 
 **已知被测 Agent 源码时**：可在主动评测的模板中选择“根据源码规划评测”，自动生成覆盖结构化输出、检索引用、拒绝编造、输入干扰、记忆/隔离及受支持工具的题集与漏测清单。支持最多 4 个独立案例并发、重复稳定性分析和分维度质量报告。具体接入、源码版本绑定和能力边界见[源码评测指南](docs/SOURCE_GUIDED_ASSESSMENT.zh-CN.md)。
 
-如果你的目标是「部署一个评审其他 Agent 的 Agent」，安装后直接看 [主动评测快速开始](#active-assessment)。也可使用 [仓库自动部署评测](docs/REPOSITORY_ASSESSMENT.zh-CN.md)：提交公开 GitHub 地址，自动接入 smolagents 或带部署清单的仓库，完成拉取、构建、部署和固定题集评测。
+如果你的目标是「部署一个评审其他 Agent 的 Agent」，安装后直接看 [主动评测快速开始](#active-assessment)。也可使用 [仓库自动部署评测](docs/REPOSITORY_ASSESSMENT.zh-CN.md)：提交公开 GitHub 地址，按配方、部署清单或 Python 自动适配接入，完成拉取、构建、部署和独立题集评测。
 
 - [1. 安装并启动](#start)
 - [2. 跑通第一个示例](#first-run)
@@ -21,7 +27,7 @@
 - [7. 进阶接口与开发](#advanced)
 - [8. 主动评测与服务部署](#active-assessment)
 
-> 当前包版本为 0.3.0。2026-10-04 已重建并验证 wheel 与 skill 内置引擎，包含代码修复、文档评估、主动评测及仓库自动部署评测。下面的源码启动方式同时提供可运行的示例与部署配置。
+> 当前包版本为 0.3.0。2026-10-05 已重建并验证 wheel 与 skill 内置引擎，包含代码修复、文档评估、主动评测、Token 完整性统计及 Python 仓库自动适配。下面的源码启动方式同时提供可运行的示例与部署配置。
 
 <a id="start"></a>
 ## 1. 安装并启动
@@ -95,13 +101,15 @@ SMOL_MODEL_ID=deepseek-flash
 SMOL_MODEL_API_KEY=填写你的DeepSeek密钥
 ```
 
-`AGENT_REVIEW_LLM_*` 用于评审端的大模型评审，`SMOL_MODEL_*` 用于示例被测 Agent；两组变量不会自动互相读取，可以使用同一把密钥。主动评测目标清单可设置为 `AGENT_REVIEW_TARGETS=examples/smolagents/targets.model.json`。
+网页仓库评测会自动选择完整的一组模型配置：优先 `AGENT_REVIEW_TARGET_API_URL/MODEL/TOKEN`，其次有密钥的 `SMOL_MODEL_*`，否则复用 `AGENT_REVIEW_LLM_API_URL/MODEL/TOKEN`。你已有 `AGENT_REVIEW_LLM_*` 或 `SMOL_MODEL_*` 配置时，无需再填写网页变量映射。不同组的 URL、模型和密钥不会混用；专用 TARGET 配置只填了一部分时会提示补齐。
 
-启动时显式加载 `.env`，因为项目不会自动把它注入每个进程：
+`serve` 自动读取当前目录 `.env`，已有进程环境变量优先；模型密钥不发送到浏览器。启动网页只需：
 
 ```sh
-uv run --env-file .env agent-review serve --data-dir ./.agent-review --port 8765
+uv run agent-review serve
 ```
+
+本机服务默认启用仓库构建，需要 Git 和运行中的 Docker。可在 `.env` 设置 `AGENT_REVIEW_ENABLE_REPOSITORY_BUILDS=false` 关闭。评测默认真实模型（`AGENT_REVIEW_REPOSITORY_BACKEND=openai`），配置缺失时明确提示，不会自动改用离线模式。独立启动 smolagents 示例进程仍需使用 `uv run --env-file .env ...`。
 
 `.env`、真实 API Key、服务令牌和其他本地凭据禁止提交；提交前可检查：
 
@@ -456,7 +464,7 @@ uv run agent-review serve --data-dir ./review-data \
 | 源码与版本回归 | 报告关联固定源码位置，对比一致题集/执行器下的逐案例变化 |
 | 服务与部署 | 异步任务、取消、重启中断恢复、访问令牌、Dockerfile/Compose、固定镜像启动检查和清理 |
 
-已部署目标可以继续由管理员登记；带清单的仓库与 smolagents 可用 `agent-review assess-repo https://github.com/huggingface/smolagents` 自动拉取、构建和评测。网页服务使用 `--enable-repository-builds` 启用仓库入口。该流程记录固定提交、构建输入及实际镜像；仍需要独立题集和 HTTP 适配约定，离线校准不代表官方能力成绩。
+已部署目标可以继续由管理员登记；带清单的仓库与 smolagents 可直接自动构建。未知 Python 仓库可在真实模型模式下使用 [LLM 自动适配](docs/AUTO_ADAPTATION.zh-CN.md)，接入检查通过后运行独立题集。本机 `serve` 默认启用仓库入口。该流程记录固定提交、构建输入及实际镜像，离线校准不代表官方能力成绩。
 
 详细配置、协议、题集规则、API、Docker 部署和限制见 [主动评测指南](docs/ACTIVE_ASSESSMENT.zh-CN.md)；最新验证见 [仓库自动部署验收](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)，此前服务验收见 [专项记录](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)。
 

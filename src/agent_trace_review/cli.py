@@ -45,6 +45,7 @@ from .repository_contracts import RepositoryAssessmentInput
 from .repository_jobs import RepositoryManager, repository_bundle
 from .repository_planning import plan_repository
 from .repository_store import RepositoryJobStore
+from .server_config import env_bool, load_server_env
 from .service import ingest
 from .storage import Store
 from .suite_generation import generate_suite
@@ -333,18 +334,31 @@ def init_task(directory: Path, template: str = "invoice"):
 
 @app.command()
 def serve(
-    data_dir: Path = Path(".agent-review"), port: int = 8765, host: str = "127.0.0.1",
+    data_dir: Path | None = None, port: int | None = None, host: str | None = None,
     targets: Path | None = None,
-    enable_repository_builds: bool = False,
+    env_file: Path | None = typer.Option(None, help="启动配置文件；默认读取当前目录 .env，已有进程变量优先。"),
+    enable_repository_builds: bool | None = typer.Option(None, "--enable-repository-builds/--disable-repository-builds"),
     repository_env: list[str] = typer.Option([], help="允许仓库目标使用的宿主机环境变量名；可重复。"),
 ):
     import uvicorn
 
     from .api import create_app
 
+    try:
+        load_server_env(env_file)
+        host = host or os.environ.get("AGENT_REVIEW_HOST", "127.0.0.1")
+        port = port if port is not None else int(os.environ.get("AGENT_REVIEW_PORT", "8765"))
+        if not 1 <= port <= 65535:
+            raise ValueError("AGENT_REVIEW_PORT 需要 1–65535。")
+        if enable_repository_builds is None:
+            enable_repository_builds = env_bool("AGENT_REVIEW_ENABLE_REPOSITORY_BUILDS", host in {"127.0.0.1", "localhost", "::1"})
+        repository_env = list(dict.fromkeys(repository_env + [v.strip() for v in
+            os.environ.get("AGENT_REVIEW_REPOSITORY_ENV", "").split(",") if v.strip()]))
+    except (ValueError, OSError):
+        raise typer.BadParameter("无法加载启动配置，请检查 .env 文件和 Host/端口/构建开关。") from None
     if host not in {"127.0.0.1", "localhost", "::1"} and not os.environ.get("AGENT_REVIEW_SERVICE_TOKEN"):
         raise typer.BadParameter("监听非回环地址需要设置 AGENT_REVIEW_SERVICE_TOKEN。")
-    uvicorn.run(create_app(str(data_dir), targets_file=str(targets) if targets else None,
+    uvicorn.run(create_app(str(data_dir) if data_dir is not None else None, targets_file=str(targets) if targets else None,
                           enable_repository_builds=enable_repository_builds, repository_environment=tuple(repository_env)),
                 host=host, port=port)
 
@@ -356,10 +370,12 @@ def assess_repository(
     seed: int = typer.Option(42, min=0, max=2147483647), backend: str = "offline",
     source_plan: bool = typer.Option(False, help="从固定源码规划受控题集；不能与 --suite 同用。"),
     attempts: int = typer.Option(1, min=1, max=3), concurrency: int = typer.Option(1, min=1, max=4),
+    auto_adapt: bool = typer.Option(True, "--auto-adapt/--no-auto-adapt", help="未知 Python 仓库使用服务端 LLM 生成适配器。"),
+    adaptation_repairs: int = typer.Option(1, min=0, max=2, help="自动适配最多修复次数。"),
     env: list[str] = typer.Option([], help="运行期环境变量 NAME=HOST_ENV；只传名称，不传密钥值。"),
     data_dir: Path = Path(".agent-review"), output: Path | None = None,
 ):
-    """拉取公开 GitHub 仓库，在 Docker 内构建并评测；auto 支持清单或 smolagents。"""
+    """拉取、构建并评测；auto 优先清单/配方，再尝试 Python LLM 适配。"""
     manager = None
     repositories = None
     try:
@@ -373,6 +389,7 @@ def assess_repository(
             raise ValueError("Suite 超过 1 MB。")
         request = RepositoryAssessmentInput(repository_url=repository_url, ref=ref, recipe=recipe,
             manifest_path=manifest, generation=SuiteGenerationInput(cases=cases, seed=seed), backend=backend,
+            adaptation={"enabled": auto_adapt, "max_repairs": adaptation_repairs},
             planning=RepositoryPlanInput(cases=cases, seed=seed, attempts=attempts, concurrency=concurrency) if source_plan else None,
             environment=environment, suite=AssessmentSuite.model_validate_json(suite.read_bytes()) if suite else None)
         manager = AssessmentManager(Store(data_dir), {})

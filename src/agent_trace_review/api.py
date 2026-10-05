@@ -29,6 +29,7 @@ from .assessments import (
     compare_assessments,
     load_targets,
     public_target,
+    telemetry_readiness,
 )
 from .contracts import EvaluatorResponse, GenericBundle, GenericTrace, TaskProfile
 from .demo import DemoScenario, scenario_bundles
@@ -94,8 +95,12 @@ def create_app(
     store = Store(data_dir or os.environ.get("AGENT_REVIEW_DATA", ".agent-review"))
     registry_path = targets_file or os.environ.get("AGENT_REVIEW_TARGETS")
     manager = AssessmentManager(store, load_targets(Path(registry_path) if registry_path else None))
-    repository_manager = RepositoryManager(manager, enabled=enable_repository_builds,
-                                           allowed_environment=repository_environment)
+    try:
+        repository_manager = RepositoryManager(manager, enabled=enable_repository_builds,
+                                               allowed_environment=repository_environment)
+    except Exception:
+        manager.close()
+        raise
     service_token = os.environ.get("AGENT_REVIEW_SERVICE_TOKEN", "")
 
     @asynccontextmanager
@@ -201,6 +206,22 @@ def create_app(
         content = canonical(repository_manager.bundle(job_id))
         return Response(content, media_type="application/octet-stream",
                         headers={"Content-Disposition": f'attachment; filename="{job_id}.json"'})
+
+    @app.get("/api/repository-jobs/{job_id}/adapter-files")
+    def export_adapter_files(job_id: str):
+        try:
+            content = repository_manager.adapter_archive(job_id)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from None
+        return Response(content, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{job_id}-adapter.zip"'})
+
+    @app.get("/api/targets/{target_id}/telemetry-readiness")
+    def target_telemetry_readiness(target_id: str):
+        target = manager.targets.get(target_id)
+        if target is None:
+            raise HTTPException(404, "未登记此目标。")
+        return telemetry_readiness(target)
 
     @app.post("/api/targets/{target_id}/repository-profile")
     def repository_profile(target_id: str):

@@ -343,6 +343,7 @@ class AgentTarget:
                 "tools": session.tools.calls[first_call:], "provenance": "target_reported",
             }}
             response = {"protocol": "agent-review/target-v1", "output": answer,
+                        "usage_mode": "offline" if self.backend == "offline" else "model",
                         "trace": session.tools.recorder.trace()}
             usage = session.model.usage()
             if usage is not None:
@@ -362,6 +363,7 @@ class AgentTarget:
                 response = {
                     "protocol": "agent-review/target-v1", "output": None,
                     "execution_status": "error", "error": "agent_execution_failed",
+                    "usage_mode": "offline" if self.backend == "offline" else "model",
                     "trace": session.tools.recorder.trace(),
                 }
                 encoded = json.dumps(redact(response, self.api_key), ensure_ascii=False, allow_nan=False)
@@ -404,6 +406,8 @@ def create_app(target, service_token=""):
     def health():
         return {
             "status": "ok", "backend": target.backend, "demo": target.backend == "offline",
+            "usage_mode": "offline" if target.backend == "offline" else "model",
+            "usage_collection": "not_applicable" if target.backend == "offline" else "call_usage",
             "framework": "smolagents", "version": smolagents.__version__,
             "commit": os.environ.get("SMOL_SOURCE_COMMIT", UPSTREAM_COMMIT),
             "model": target.model_id if target.backend == "openai" else "offline-scripted-tool-planner",

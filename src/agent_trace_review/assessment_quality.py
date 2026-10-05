@@ -39,6 +39,7 @@ def quality_summary(rows, suite, repository):
     required = [check for r in rows for check in r["checks"] if check["required"]]
     telemetry = Counter(r.get("telemetry", {}).get("coverage", "unavailable") for r in rows)
     token_known = sum(r["usage"]["total_tokens"] is not None for r in rows)
+    token_statuses = [r["usage"].get("fields", {}).get("total_tokens", {}).get("status", "unknown") for r in rows]
     linked_claims = {claim for c in suite.cases for claim in c.claim_ids}
     gaps = []
     for claim in (repository or {}).get("claims", []):
@@ -59,7 +60,9 @@ def quality_summary(rows, suite, repository):
                      "observed_runs": len(rows), "required_checks": len(required),
                      "unknown_required_checks": sum(c["status"] == "unknown" for c in required),
                      "telemetry_complete_runs": telemetry["complete"], "telemetry_partial_runs": telemetry["partial"],
-                     "telemetry_unavailable_runs": telemetry["unavailable"], "token_known_runs": token_known},
+                     "telemetry_unavailable_runs": telemetry["unavailable"], "token_known_runs": token_known,
+                     "token_partial_runs": token_statuses.count("partial"),
+                     "token_not_applicable_runs": token_statuses.count("not_applicable")},
         "limitations": ["通过率范围是固定题集中未知项的最好/最坏情况，不是统计置信区间或总体能力分数。",
                         "重复稳定性按同一案例和预算分别计算；少于两次不能判断稳定性。",
                         "p50/p95 使用已观测案例耗时的 nearest-rank；小样本分位数不能代表生产延迟。",

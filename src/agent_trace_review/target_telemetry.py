@@ -1,5 +1,7 @@
 """Summaries of validated, target-reported calls; no inference of missing calls or prices."""
 
+from .usage_accounting import summarize_usage
+
 
 def _sum_known(values):
     return round(sum(values), 6) if values and all(v is not None for v in values) else None
@@ -26,10 +28,14 @@ def telemetry_summary(turns, execution_complete=True):
     models = []
     for model in sorted({e.get("model") or "unknown" for e in llms}):
         selected = [e for e in llms if (e.get("model") or "unknown") == model]
-        tokens = {}
-        for key in ("input", "output", "total"):
-            tokens[key] = _sum_known([(e.get("usage") or {}).get("tokens", {}).get(key) for e in selected])
-        models.append({"model": model, "calls": len(selected), "tokens": tokens, "duration_ms": duration(selected)})
+        usage = summarize_usage([{"trace": {"coverage": "complete" if complete else "partial", "events": selected},
+                                  "usage_mode": "offline" if turns and all(t.get("usage_mode") == "offline" for t in turns)
+                                  else "unknown"}], execution_complete)
+        tokens = {key: usage["fields"][key + "_tokens"]["value"]
+                  if usage["fields"][key + "_tokens"]["status"] == "complete" else None
+                  for key in ("input", "output", "total")}
+        models.append({"model": model, "calls": len(selected), "tokens": tokens,
+                       "usage": usage, "duration_ms": duration(selected)})
     return {
         "coverage": "complete" if complete else "partial" if available else "unavailable",
         "provenance": "target_reported",

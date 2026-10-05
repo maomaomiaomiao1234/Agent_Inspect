@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, DownloadLink } from "./api-client";
 import { RepositoryAssessments } from "./repository-assessments";
+import { UsageValue, type Usage } from "./usage";
 
 type Target = { id: string; repository_configured: boolean; managed: boolean; demo: boolean };
 type GeneratedSuite = { id: string; description: string; cases: { id: string; turns: unknown[] }[] };
@@ -15,21 +16,24 @@ type Quality = { dimensions: { category: string; budget_id: string; observed: nu
   p50_duration_ms: number | null; p95_duration_ms: number | null }[];
   stability: { case_id: string; budget_id: string; status: string; observed: number; planned: number }[];
   source_coverage: { kind: string; name: string; path: string; line: number; status: string }[];
-  evidence: { token_known_runs: number; planned_runs: number; unknown_required_checks: number; required_checks: number };
+  evidence: { token_known_runs: number; token_partial_runs?: number; token_not_applicable_runs?: number;
+    planned_runs: number; unknown_required_checks: number; required_checks: number };
   limitations: string[] };
 type Telemetry = { coverage: "complete" | "partial" | "unavailable"; llm_calls: number | null; tool_calls: number | null;
   llm_errors: number | null; tool_errors: number | null; llm_duration_ms: number | null; tool_duration_ms: number | null;
-  models: { model: string; calls: number; tokens: { input: number | null; output: number | null; total: number | null }; duration_ms: number | null }[] };
+  models: { model: string; calls: number; tokens: { input: number | null; output: number | null; total: number | null };
+    usage?: Usage; duration_ms: number | null }[] };
 type Job = {
   id: string; state: string; target_id: string; suite_id: string; planned: number; completed: number;
   commit: string | null; repository_id: string | null; error: string | null; demo: boolean;
   curves: { budget: { id: string }; pass: number; fail: number; unknown: number; pass_rate: number;
-    mean_duration_ms: number | null; reported_total_tokens: number | null; reported_cost_usd: number | null }[];
+    mean_duration_ms: number | null; reported_total_tokens: number | null; reported_cost_usd: number | null; usage?: Usage }[];
   results: { case_id: string; budget_id: string; attempt: number; outcome: string; run_id: string;
     execution_state: string; error: string | null; source_evidence: Source[]; telemetry?: Telemetry;
-    usage?: { input_tokens?: number | null; output_tokens?: number | null; total_tokens: number | null } }[];
+    usage?: Usage }[];
   claims: Claim[]; limitations: string[];
   quality?: Quality; concurrency?: number;
+  purpose?: string;
 };
 
 const stateLabel: Record<string, string> = { queued: "排队中", running: "执行中", completed: "已完成",
@@ -71,6 +75,7 @@ export function Assessments() {
   const [repository, setRepository] = useState<Repository | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [readiness, setReadiness] = useState<{ usage_mode: string; collection: string; reason: string; model: string | null } | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
@@ -119,7 +124,7 @@ export function Assessments() {
       {!targets.length ? <p>尚未登记目标。管理员启动服务时使用 <code>--targets targets.json</code> 配置服务地址；README 提供可直接运行的控制 Agent。</p> : <>
         <div className="assessment-controls">
           <label>被测 Agent<select aria-label="被测 Agent" value={target} onChange={e => {
-            setTarget(e.target.value); setRepository(null); setPlan(null); setSuite(null); setGenerated(null); setSuiteName("");
+            setTarget(e.target.value); setReadiness(null); setRepository(null); setPlan(null); setSuite(null); setGenerated(null); setSuiteName("");
           }}>
             {targets.map(t => <option key={t.id} value={t.id}>{t.id}{t.demo ? "（控制示例）" : ""}{t.managed ? " · Docker" : ""}</option>)}
           </select></label>
@@ -139,7 +144,12 @@ export function Assessments() {
           <button disabled={busy || !targets.find(t => t.id === target)?.repository_configured} onClick={() => action(async () => {
             setRepository(await api<Repository>(`/targets/${encodeURIComponent(target)}/repository-profile`, { method: "POST" }));
           })}>扫描能力档案</button>
+          <button disabled={busy || !target} onClick={() => action(async () => {
+            setReadiness(await api(`/targets/${encodeURIComponent(target)}/telemetry-readiness`));
+          })}>检查 Token 采集</button>
         </div>
+        {readiness && <p role="status">模式：{readiness.usage_mode === "offline" ? "离线校准" : readiness.usage_mode === "model" ? "真实模型" : "未知"}
+          {readiness.model ? ` · ${readiness.model}` : ""}；{readiness.reason}</p>}
         <h3>自动生成测试文件</h3>
         <div className="assessment-controls">
           <label>测试模板<select aria-label="测试模板" disabled={busy} value={template} onChange={e => setTemplate(e.target.value)}>
@@ -208,7 +218,7 @@ export function Assessments() {
       <div className="document-result-heading"><h2>评测任务</h2><button onClick={() => setRefresh(x => x + 1)}>刷新评测</button></div>
       {!jobs.length ? <p>尚无评测记录。先用 examples/assessment/suite.json 跑通流程。</p> : <div className="assessment-table"><table>
         <thead><tr><th>题集 / Agent</th><th>状态</th><th>案例进度</th><th>任务 ID</th></tr></thead>
-        <tbody>{jobs.map(j => <tr key={j.id}><td><button className="text-button" onClick={() => setSelected(j.id)}>{j.suite_id} / {j.target_id}{j.demo ? " · 示例" : ""}</button></td>
+        <tbody>{jobs.map(j => <tr key={j.id}><td><button className="text-button" onClick={() => setSelected(j.id)}>{j.suite_id} / {j.target_id}{j.demo ? " · 示例" : ""}{j.purpose === "adapter_validation" ? " · 接入检查" : ""}</button></td>
           <td>{stateLabel[j.state] || j.state}</td><td>{j.completed}/{j.planned}</td><td className="mono">{j.id.slice(-12)}</td></tr>)}</tbody>
       </table></div>}
     </section>
@@ -222,14 +232,17 @@ export function Assessments() {
         <DownloadLink path={`/assessments/${job.id}/export?format=bundle`}>导出证据包</DownloadLink>
       </div></div>
       <p>{stateLabel[job.state]} · {job.completed}/{job.planned} · 源码提交：<code>{job.commit || "未知"}</code></p>
+      {job.purpose === "adapter_validation" && <p className="scenario-note">这是适配器接入检查，验证原入口调用和协议；本题及用量不计入正式能力评测。</p>}
       {job.error && <p role="alert">执行错误：{job.error}</p>}
       <div className="assessment-table"><table><thead><tr><th>预算</th><th>通过</th><th>失败</th><th>未知</th><th>通过率</th><th>平均观测耗时</th><th>自报 Token</th></tr></thead>
         <tbody>{job.curves.map(c => <tr key={c.budget.id}><td>{c.budget.id}</td><td>{c.pass}</td><td>{c.fail}</td><td>{c.unknown}</td>
-          <td>{c.pass_rate}%</td><td>{c.mean_duration_ms == null ? "未知" : `${(c.mean_duration_ms / 1000).toFixed(2)} 秒`}</td><td>{c.reported_total_tokens ?? "未知"}</td></tr>)}</tbody></table></div>
-      <p className="scenario-note">未知和未完成的案例保留在通过率分母中。耗时包含评审端开销；Token 与费用没有目标自报时保持未知。</p>
+          <td>{c.pass_rate}%</td><td>{c.mean_duration_ms == null ? "未知" : `${(c.mean_duration_ms / 1000).toFixed(2)} 秒`}</td>
+          <td><UsageValue usage={c.usage} field="total_tokens" fallback={c.reported_total_tokens} /></td></tr>)}</tbody></table></div>
+      <p className="scenario-note">未知和未完成的案例保留在通过率分母中。Token：数字表示完整汇总，≥ 表示已观测下界；离线校准不适用，未上报保持未知。鼠标停留可查看来源与原因。</p>
       {job.quality && <section aria-label="维度覆盖与质量">
         <h3>维度覆盖与质量</h3>
-        <p>案例并发上限 {job.concurrency ?? 1}；Token 已知 {job.quality.evidence.token_known_runs}/{job.quality.evidence.planned_runs} 次；
+        <p>案例并发上限 {job.concurrency ?? 1}；Token 完整 {job.quality.evidence.token_known_runs}/{job.quality.evidence.planned_runs} 次，
+          部分 {job.quality.evidence.token_partial_runs ?? 0} 次，离线不适用 {job.quality.evidence.token_not_applicable_runs ?? 0} 次；
           必需检查未知 {job.quality.evidence.unknown_required_checks}/{job.quality.evidence.required_checks} 项。</p>
         <div className="assessment-table"><table><thead><tr><th>维度 / 预算</th><th>完成 / 计划</th><th>通过 / 失败 / 未知</th><th>通过率范围</th><th>p50 / p95 ms</th></tr></thead>
           <tbody>{job.quality.dimensions.map(d => <tr key={`${d.category}-${d.budget_id}`}>
@@ -249,8 +262,8 @@ export function Assessments() {
         <th>案例 / 预算 / 次数</th><th>输入 Token</th><th>输出 Token</th><th>总 Token</th>
         <th>模型调用</th><th>工具调用</th><th>模型错误 / 工具错误</th><th>模型耗时 / 工具耗时</th><th>覆盖范围</th>
       </tr></thead><tbody>{job.results.map(r => <tr key={r.run_id}>
-        <td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td>{r.usage?.input_tokens ?? "未知"}</td>
-        <td>{r.usage?.output_tokens ?? "未知"}</td><td>{r.usage?.total_tokens ?? "未知"}</td>
+        <td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td><UsageValue usage={r.usage} field="input_tokens" /></td>
+        <td><UsageValue usage={r.usage} field="output_tokens" /></td><td><UsageValue usage={r.usage} field="total_tokens" /></td>
         <td>{callCount(r.telemetry?.llm_calls, r.telemetry)}</td><td>{callCount(r.telemetry?.tool_calls, r.telemetry)}</td>
         <td>{callCount(r.telemetry?.llm_errors, r.telemetry)} / {callCount(r.telemetry?.tool_errors, r.telemetry)}</td>
         <td>{callTime(r.telemetry?.llm_duration_ms, r.telemetry)} / {callTime(r.telemetry?.tool_duration_ms, r.telemetry)}</td>
@@ -259,9 +272,13 @@ export function Assessments() {
       {job.results.some(r => !!r.telemetry?.models.length) && <details><summary>按模型查看用量</summary>
         <ul>{job.results.flatMap(r => (r.telemetry?.models || []).map(m => <li key={`${r.run_id}-${m.model}`}>
           {r.case_id} / {r.budget_id} / {r.attempt} · {m.model} · {callCount(m.calls, r.telemetry)} 次 ·
-          输入 {callCount(m.tokens.input, r.telemetry)} / 输出 {callCount(m.tokens.output, r.telemetry)} Token · {callTime(m.duration_ms, r.telemetry)}
+          输入 <UsageValue usage={m.usage} field="input_tokens" fallback={m.tokens.input} /> / 输出 <UsageValue usage={m.usage} field="output_tokens" fallback={m.tokens.output} /> Token · {callTime(m.duration_ms, r.telemetry)}
         </li>))}</ul>
       </details>}
+      <details><summary>Token 采集状态与原因</summary><ul>{job.results.flatMap(r => Object.entries(r.usage?.fields || {})
+        .filter(([key]) => ["input_tokens", "output_tokens", "total_tokens", "cost_usd"].includes(key))
+        .map(([key, field]) => <li key={`${r.run_id}-${key}`}>{r.case_id} / {r.budget_id} · {key}：
+          <UsageValue usage={r.usage} field={key} /> · {field.source} · {field.reason}</li>))}</ul></details>
       <div className="assessment-table"><table><thead><tr><th>案例 / 预算 / 次数</th><th>验收</th><th>执行</th><th>源码线索</th><th>证据</th></tr></thead>
         <tbody>{job.results.map(r => <tr key={r.run_id}><td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td>{outcomeLabel[r.outcome]}</td>
           <td>{r.execution_state}{r.error ? ` · ${r.error}` : ""}</td><td>{r.source_evidence.map((s, i) => <div key={i}><SourceLink source={s} /></div>)}</td>

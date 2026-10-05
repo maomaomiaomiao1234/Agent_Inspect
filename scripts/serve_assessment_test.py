@@ -37,6 +37,10 @@ def main():
             ]
             targets.append({"id": "source-planning-control", "endpoint": f"http://127.0.0.1:{server.server_port}",
                             "repository": str(planning_source), "task_path": "/incorrect", "demo": True})
+            for mode in ("complete", "partial", "offline"):
+                targets.append({"id": f"token-{mode}", "endpoint": f"http://127.0.0.1:{server.server_port}",
+                                "task_path": f"/token-{mode}", "demo": True,
+                                "health_path": "/offline-health" if mode == "offline" else "/token-health"})
             if args.telemetry_target:
                 targets.append({"id": "smolagents-offline", "endpoint": args.telemetry_target,
                                 "health_path": "/health", "demo": True})

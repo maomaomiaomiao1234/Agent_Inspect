@@ -20,7 +20,7 @@ test("actual smolagents calls appear in assessment, evidence export and timeline
   const stats = page.getByRole("table", { name: "模型与工具调用统计" });
   await expect(stats).toContainText("目标声明完整");
   const cells = stats.locator("tbody tr").first().locator("td");
-  await expect(cells.nth(1)).toHaveText("未知");
+  await expect(cells.nth(1)).toHaveText("不适用（离线校准）");
   await expect(cells.nth(4)).toHaveText("2");
   await expect(cells.nth(5)).toHaveText("2");
   await expect(cells.nth(6)).toHaveText("0 / 0");

@@ -81,6 +81,7 @@ def import_generic(
         output_present="output" in raw,
         artifacts=trace.artifacts,
         trace_complete=trace.coverage == "complete",
+        usage_summary=trace.usage_summary,
         demo=trace.demo,
     )
     run.evidence.append(
@@ -92,6 +93,9 @@ def import_generic(
             description=f"{trace.framework} 通用轨迹；由提供方声明覆盖范围",
         )
     )
+    if trace.usage_summary:
+        run.evidence.append(Evidence(id="usage-summary", kind="artifact", artifact_id=source,
+                                     pointer="/usage_summary", description="独立用量摘要；逐次调用不再重复累加。"))
     if manifest:
         artifact = store.put_artifact(canonical(manifest.model_dump()).encode())
         run.evidence.append(
@@ -185,14 +189,18 @@ def import_generic(
                     "cost": item.usage.cost_usd if item.usage else None,
                 }
             )
+    usage_level = "observed" if run.usage else "unavailable"
+    if run.usage_summary:
+        usage_level = {"complete": "observed", "partial": "partial", "unknown": "unavailable",
+                       "not_applicable": "not_applicable"}[run.usage_summary.fields["total_tokens"].status]
     run.coverage = {
         "tools": {
             "level": "observed" if run.trace_complete else "partial",
             "reason": "覆盖范围由导出器声明；工具名称不自动推断为只读。",
         },
         "usage": {
-            "level": "observed" if run.usage else "unavailable",
-            "reason": "逐次 llm 调用用量；未提供的字段保持未知，不从工具层重复累计。",
+            "level": usage_level,
+            "reason": "显式摘要优先于逐次 llm 用量，每个字段保留完整性；不重复累计。",
         },
         "verification": {
             "level": "partial" if records else "unavailable",

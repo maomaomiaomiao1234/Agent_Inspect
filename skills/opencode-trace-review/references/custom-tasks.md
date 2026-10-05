@@ -6,6 +6,12 @@
 
 下文 `agent-review` 表示引擎命令。通过 skill 使用时替换为 `python3 "$REVIEW_SKILL/scripts/run_review.py"`。操作使用同一个绝对 `--data-dir`；RUN_ID 使用导入返回值。
 
+## Python 仓库自动接入
+
+用户授权主动部署评测时，可用 `assess-repo PUBLIC_GITHUB_URL --backend openai`。auto 优先仓库清单和 smolagents 固定配方，未知 Python 仓库使用可信服务端 LLM 配置生成桥接文件、受控 Dockerfile 和清单，再实际检查原入口调用。相关源码片段会发给该供应商，生成代码仅在 Docker 内执行；不因普通轨迹导入启动此流程。`--no-auto-adapt` 关闭生成，`--adaptation-repairs 0–2` 控制修复次数。
+
+生成、接入检查与正式评测 Token 分开保存，失败和缺少字段保持未知/可见下界。生成文件、修复记录和独立接入检查在仓库证据包中，不能把接入检查 pass 当作能力成绩。容器的原入口观察是自报证据，不构成防篡改认证或完整工作流等价性证明。没有独立题集时使用程序答案的源码受控探测，不能把生成模型的猜测当作 ground truth。
+
 ## 从模板开始
 
 ```sh
@@ -39,6 +45,7 @@ invoice 包含合成轨迹、JSON 规则、external 规则及可运行的 Python
 - effect 为 read/write/unknown，仅明确只读的调用参与重复读取检测，不能根据陌生工具名猜测。
 - status 为 completed/error/running/skipped/unknown；未知结果不能填写 completed。
 - usage 只放在独立 llm 调用事件上，不能同时记录父任务合计和子调用。未知字段省略，不填写 0。cost_usd 已换算为美元；引擎不换汇或查询价格。
+- 可选 `usage_summary` 保存独立汇总证据，包含 provenance 和五字段 fields（input_tokens/output_tokens/total_tokens/reasoning_tokens/cost_usd）；每个字段声明 value、status（complete/partial/unknown/not_applicable）、source 和 reason。显式摘要替代事件用量累计，不与子调用重复相加；须与可见调用一致。Token 完整性独立于工具覆盖，部分用量只确认超预算，未超出仍 unknown。完整格式见项目调用记录指南和 schema。
 - 事件和轨迹可提供 start_ms/end_ms，单位毫秒；数组顺序决定行为先后。
 - coverage 默认为 partial。complete 是导出方对全部调用的声明；部分轨迹不能证明工具未被调用，资源阈值也可能保持 unknown。
 - output 是最终 JSON 结果，artifacts 是内嵌辅助材料。导入器不读取其中引用的路径或 URL。参考答案应由验收方提供。

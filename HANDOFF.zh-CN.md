@@ -1,5 +1,37 @@
 # Agent_Inspect 开发交接
 
+## Python LLM 自动适配（2026-10-05）
+
+用户授权实施未知仓库的自动接入。`recipe=auto` 优先清单与 smolagents 固定配方，然后对 Python 仓库调用服务端 LLM；也支持显式 `recipe=llm`。新增 `repository_adaptation.py` 和评审器固定的 `repository_templates/auto_runtime.py`，生成有界桥接代码及部署文件，宿主机仅静态检查，实际代码在 Docker 内运行。
+
+先做独立接入检查，要求匹配固定源文件/符号/哈希的原入口被观察；不通过则有限修复（默认一次、最多两次）。正式任务同样校验入口证据，不能把未观察原入口的答案判为能力通过。验证证据来自容器自报，不是防篡改认证，也不保证完整工作流未被旁路。未知外部服务、依赖或不能可靠确定入口时保存失败/不支持原因。
+
+自动接入无上传题集时启用现有源码规划，答案由评审端程序生成；LLM 和目标不接收独立 Profile/标准答案。生成 Token、接入检查 Token 和正式评测分别保存，失败/截断保留可见用量。固定模板观察配置模型端点的 httpx 非流式请求、支持显式原生模型/工具包装，默认 partial，未观测用量保持未知。协议增加可选 `adapter_evidence`，原协议继续兼容。
+
+网页可调整是否自动接入和修复次数，展示生成/修复/验证阶段及分开用量。完整导出保留材料、每轮生成文件/诊断/验证任务；新增 `GET .../adapter-files` 下载文件 ZIP，不含原源码或 `.env`。CLI 增加 `--auto-adapt/--no-auto-adapt`、`--adaptation-repairs`。服务端配置见 `.env.example`，操作见 [自动适配指南](docs/AUTO_ADAPTATION.zh-CN.md)。
+
+实际 Docker 验收成功：本地合成生成 API + 合成被测模型 + 本地固定的合成 Python 仓库，1 次生成、1 次接入检查和 1 次正式调用，观察到原入口、calculator 与 ≥15 Token，正式单题 pass，资源清理 completed。验证不是陌生真实仓库适配成功率，也不是供应商模型能力成绩。本轮没有读取/修改本地 `.env` 或新增付费调用。详细记录见 [验收](AUTO_ADAPTATION_VALIDATION.zh-CN.md)；后文“其他仓库必须人工添加清单”为历史状态。
+
+## 网页真实模型评测入口（2026-10-05）
+
+用户要求启动网页后只填仓库链接，模型配置从 `.env` 读取，其余评测参数在网页调整。现已实现：`uv run agent-review serve` 自动加载工作目录 `.env`，进程环境优先，本地监听默认启用仓库构建；网页默认真实模型，缺配置时阻止提交并说明缺失变量，不静默切换离线。
+
+模型配置按完整组选择：专用 `AGENT_REVIEW_TARGET_*`、带密钥的 `SMOL_MODEL_*`、带密钥的 `AGENT_REVIEW_LLM_*`。不会混用不同组的地址/模型/密钥；浏览器只接收状态、地址和模型名。smolagents 自动注入配置；其他仓库清单声明的标准模型变量也可自动映射，额外变量仍由服务端白名单控制。密钥仅用于运行容器，不进入源码或构建上下文。
+
+网页可调整模式、案例数、种子、版本、单题期限、输出 Token 上限、重复次数、并发及生成策略。上传固定题集时保留其参数。源码规划题集和导出包保存实际执行参数；累计期限仍限制为 900 秒。自动部署配方仍仅 smolagents，其他仓库需要部署清单和 `target-v1` 适配器。
+
+验收：后端 383 passed / 2 skipped，Chrome 9 passed，Ruff 和前端构建通过。使用合成模型配置、模拟任务管线和本地浏览器检查；未读取或修改本地 `.env`，未新增供应商调用。当前使用说明见 [仓库评测指南](docs/REPOSITORY_ASSESSMENT.zh-CN.md)，详细范围见 [网页入口验收](WEB_MODEL_ASSESSMENT_VALIDATION.zh-CN.md)。后文默认离线的记录为此前行为；CLI `assess-repo` 保留原有默认，网页显式选择自动模式并默认解析为真实模型。
+
+## Token 统计第一阶段（2026-10-05）
+
+按用户“先探索再决定”的要求完成诊断，随后授权实施第一阶段。现场最近任务实际为 offline，并非真实模型用量被丢失；已有 DeepSeek 历史单题记录 3166/99/3265。修复现有统计：逐字段完整性与原因、完整调用补齐汇总、错误/取消/超时保留可见下界、显式资源摘要避免伪造 llm 事件及重复计数。案例、预算、按模型、运行详情、Profile、页面和导出使用同一证据；部分用量超上限可判失败，未超出仍未知。
+
+目标响应新增可选 `usage_mode`，通用轨迹新增可选 `usage_summary`，Metric 增加 `not_applicable`。原有完整总量字段继续仅保存完整数值，下界放 `usage.fields.*.value`；运行前健康诊断入口 `/api/targets/{id}/telemetry-readiness` 不调用任务、不启动容器。smolagents 健康接口声明模式与采集能力；默认离线模式不会因为配置密钥自动变为真实模型。
+
+内置自动仓库配方仍只有 smolagents，其他仓库需部署清单、`target-v1` 或通用轨迹转换。下一阶段是通用 SDK/供应商用量采集，之后试点受控模型网关；尚未实施。旧任务和旧评估版本不自动改写，缺失的历史用量无法恢复。说明见 [探索方案](docs/TOKEN_USAGE_EXPLORATION.zh-CN.md)、[调用记录指南](docs/TARGET_TELEMETRY.zh-CN.md)。
+
+验收见 [TOKEN_ACCOUNTING_VALIDATION.zh-CN.md](TOKEN_ACCOUNTING_VALIDATION.zh-CN.md)：后端 366 passed/2 skipped，smolagents 适配器 11 passed，Chrome 7 passed，Ruff/前端/wheel/Skill 通过。恢复了被忽略的 smolagents 独立环境（离线 uv 缓存），没有读取/修改 `.env`，没有新增供应商调用，临时测试服务已关闭。
+
 ## 已知源码评测增强（2026-10-05）
 
 新增 `source_tools.py`、`repository_planning.py`、`assessment_quality.py`。源码档案含 Python 工具候选和能力线索；`plan-repository` CLI、`/api/assessment-suites/plan/{repository_id}`、网页源码模板输出绑定 source hash 的受控题集和漏测项。仓库自动部署通过 `planning` / `--source-plan` 启用，导出包保存完整计划，固定 checkout 档案只扫描一次。

@@ -3,9 +3,10 @@
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, model_validator
+from pydantic import Field, PrivateAttr, model_validator
 
 from .contracts import Contract, TaskProfile, TraceEvent, Usage
+from .usage_accounting import KEYS, usage_value
 
 ID = r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$"
 
@@ -184,16 +185,31 @@ class TargetTrace(Contract):
         return self
 
 
+class NativeEntryEvidence(Contract):
+    path: str = Field(min_length=1, max_length=300)
+    symbol: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_.]{0,199}$")
+    source_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    observed: bool
+    error_type: str | None = Field(default=None, pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+    missing_module: str | None = Field(default=None, pattern=r"^[A-Za-z_][A-Za-z0-9_.]{0,199}$")
+    provenance: Literal["target_reported"] = "target_reported"
+
+
 class TargetResponse(Contract):
     protocol: Literal["agent-review/target-v1"] = "agent-review/target-v1"
     output: Any
     usage: Usage | None = None
+    usage_mode: Literal["model", "offline", "unknown"] = "unknown"
     execution_status: Literal["completed", "error"] = "completed"
     error: Literal["agent_execution_failed"] | None = None
     trace: TargetTrace | None = None
+    adapter_evidence: NativeEntryEvidence | None = None
+    _aggregate_fields: set[str] = PrivateAttr(default_factory=set)
 
     @model_validator(mode="after")
     def bounded_usage(self):
+        self._aggregate_fields = {key for key in KEYS
+                                  if usage_value(self.usage.model_dump() if self.usage else None, key) is not None}
         validate_reported_usage(self.usage)
         if (self.execution_status == "error") != (self.error is not None):
             raise ValueError("执行错误需要 error；成功响应不能声明 error。")
@@ -215,10 +231,30 @@ class TargetResponse(Contract):
                         reported = getattr(self.usage.tokens, key)
                         if value is not None and reported is not None and value != reported:
                             raise ValueError("汇总 Token 与本轮逐次调用不一致。")
+                        if reported is None and value is not None:
+                            setattr(self.usage.tokens, key, value)
                     if cost is not None and self.usage.cost_usd is not None:
                         if abs(cost - self.usage.cost_usd) > 1e-8:
                             raise ValueError("汇总费用与本轮逐次调用不一致。")
+                    elif cost is not None:
+                        self.usage.cost_usd = cost
                 validate_reported_usage(self.usage)
+        if self.usage and self.usage.tokens.total is None:
+            if self.usage.tokens.input is not None and self.usage.tokens.output is not None:
+                self.usage.tokens.total = self.usage.tokens.input + self.usage.tokens.output
+        if self.usage and self.trace:
+            for key in KEYS:
+                aggregate = usage_value(self.usage.model_dump(), key)
+                values = [usage_value(e.usage.model_dump() if e.usage else None, key)
+                          for e in self.trace.events if e.kind == "llm"]
+                if aggregate is not None and aggregate + 1e-8 < sum(v for v in values if v is not None):
+                    raise ValueError("汇总用量不能小于已报告的调用用量。")
+        if self.usage_mode == "offline":
+            usages = [self.usage] + ([e.usage for e in self.trace.events] if self.trace else [])
+            if any(u and (any(v is not None for v in u.tokens.model_dump().values()) or u.cost_usd is not None)
+                   for u in usages):
+                raise ValueError("离线校准不能同时声明模型用量。")
+        validate_reported_usage(self.usage)
         return self
 
 
