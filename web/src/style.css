@@ -358,6 +358,17 @@ nav {
   flex-direction: column;
   gap: 7px;
 }
+.nav-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #8c96a5;
+  margin: 14px 11px 4px;
+}
+.nav-group-label:first-child {
+  margin-top: 4px;
+}
 nav a {
   display: flex;
   align-items: center;
@@ -2277,4 +2288,241 @@ select:focus-visible {
 }
 .diagnosis-panel .finding-card strong {
   font-size: 13px;
+}
+
+/* 专项基准评估样式 */
+.benchmarks-page,
+.skills-page {
+  padding-bottom: 48px;
+}
+.benchmarks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+  gap: 20px;
+  margin-block: 20px;
+}
+.benchmark-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+.benchmark-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.benchmark-card-header h2 {
+  font-size: 17px;
+  font-weight: 650;
+  color: #202833;
+}
+.benchmark-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.benchmark-badge.code {
+  background: #eef2ff;
+  color: #3b49df;
+  border: 1px solid #d4ddfc;
+}
+.benchmark-badge.doc {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+.benchmark-card-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #59687b;
+}
+.benchmark-scenarios h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3d4757;
+  margin-bottom: 10px;
+}
+.benchmark-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 550;
+  border: 1px solid #dce0e7;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.benchmark-btn:hover {
+  background: #f8f9fb;
+  border-color: #bcc3cf;
+}
+.benchmark-btn.pass {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+.benchmark-btn.pass:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
+}
+.benchmark-btn.fail {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+.benchmark-btn.fail:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+}
+.benchmark-btn.warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+.benchmark-btn.warn:hover {
+  background: #fef3c7;
+  border-color: #fbbf24;
+}
+.benchmark-options {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.checkbox-label input {
+  margin: 0;
+}
+.benchmark-history-section {
+  margin-top: 24px;
+}
+.empty-runs-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+  color: var(--muted);
+}
+.badge-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-tag.code {
+  background: #eef2ff;
+  color: #4338ca;
+}
+.badge-tag.doc {
+  background: #ecfdf5;
+  color: #065f46;
+}
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.button-link:hover {
+  text-decoration: underline;
+}
+
+/* Skill 工具页面样式 */
+.skill-stats-bar {
+  margin-block: 20px;
+}
+.skill-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+  gap: 20px;
+  margin-block: 20px;
+}
+.skill-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.skill-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.skill-card-header h2 {
+  font-size: 16px;
+  font-weight: 650;
+  color: #202833;
+}
+.skill-step-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: #252e42;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: monospace;
+}
+.code-box {
+  background: #1e2430;
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow: hidden;
+}
+.code-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #8c97a8;
+  font-size: 12px;
+  font-weight: 550;
+}
+.code-box-header button {
+  color: #d1d5db;
+  padding: 4px;
+}
+.code-box-header button:hover {
+  background: #323b4e;
+  color: #fff;
+}
+.code-box pre {
+  margin: 0;
+  color: #e5e9f0;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.skill-quick-demo {
+  margin-block: 20px;
+  padding: 22px;
+}
+@media (max-width: 900px) {
+  .benchmarks-grid,
+  .skill-cards-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

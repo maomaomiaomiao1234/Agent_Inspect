@@ -2,14 +2,18 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api, apiFetch, DownloadLink, setAccessToken } from "./api-client";
 import { Assessments } from "./assessments";
+import { Benchmarks } from "./benchmarks";
+import { SkillTools } from "./skills";
 import { ModelCallUsage } from "./usage";
 import {
   Activity,
   ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
+  Boxes,
   Braces,
   Check,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
   CircleHelp,
@@ -30,6 +34,7 @@ import {
   ShieldCheck,
   Terminal,
   Upload,
+  Wrench,
   X,
 } from "lucide-react";
 import type {
@@ -246,13 +251,24 @@ function App() {
           本地工作区 <span className="live-dot" />
         </div>
         <nav>
+          <div className="nav-group-label">评估体系</div>
+          <a className={path.startsWith("/runs") ? "active" : ""} href="#/runs">
+            <LayoutList size={18} />
+            交互轨迹评估 <span>{runs.length}</span>
+          </a>
+          <a className={path === "/benchmarks" ? "active" : ""} href="#/benchmarks">
+            <CheckSquare size={18} />
+            专项基准评估
+          </a>
           <a className={path === "/assessments" ? "active" : ""} href="#/assessments">
             <FlaskConical size={18} />
             主动评测
           </a>
-          <a className={path.startsWith("/runs") ? "active" : ""} href="#/runs">
-            <LayoutList size={18} />
-            运行记录 <span>{runs.length}</span>
+
+          <div className="nav-group-label">工具与分析</div>
+          <a className={path === "/skills" ? "active" : ""} href="#/skills">
+            <Wrench size={18} />
+            Skill 评测工具
           </a>
           <a className={path === "/compare" ? "active" : ""} href="#/compare">
             <Columns2 size={18} />
@@ -289,7 +305,11 @@ function App() {
                     ? "接入指南"
                     : path === "/assessments"
                       ? "主动评测"
-                    : "运行记录"}
+                      : path === "/benchmarks"
+                        ? "专项基准评估"
+                        : path === "/skills"
+                          ? "Skill 评测工具"
+                        : "交互轨迹评估"}
             </b>
           </div>
           <div className="local-chip">
@@ -315,6 +335,17 @@ function App() {
             />
           ) : path === "/assessments" ? (
             <Assessments />
+          ) : path === "/benchmarks" ? (
+            <Benchmarks
+              runs={runs}
+              onRefresh={() => setRefresh((x) => x + 1)}
+              onError={setError}
+            />
+          ) : path === "/skills" ? (
+            <SkillTools
+              dataDir={health?.data_dir}
+              onRunDemo={(scenario) => demo(scenario)}
+            />
           ) : path === "/compare" ? (
             <CompareView
               runs={runs}
@@ -328,9 +359,9 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <div className="eyebrow">OPENCODE / RUNS</div>
-                  <h1>每一次执行，都有迹可循。</h1>
-                  <p>从工具调用到代码变更，理解 agent 的结果与过程。</p>
+                  <div className="eyebrow">OPENCODE / RUNS · 交互轨迹评估</div>
+                  <h1>交互轨迹评估</h1>
+                  <p>从工具调用到代码变更，全面解析 Agent 的运行轨迹、资源开销与独立验收依据。</p>
                 </div>
                 <button className="primary" onClick={() => setImporting(true)}>
                   <Plus size={17} />
@@ -369,7 +400,7 @@ function App() {
                 </div>
               </div>
               <section className="standalone-panel assessment-guide" aria-labelledby="scenario-heading">
-                <h2 id="scenario-heading">Task 1 · OpenCode 轨迹评估</h2>
+                <h2 id="scenario-heading">OpenCode 轨迹评估</h2>
                 <p>先用三种证据场景理解验收：过程正常不等于结果正确，证据不足也不等于失败。</p>
                 <div className="scenario-actions">
                   <button disabled={demoBusy} onClick={() => demo("focused")}>通过示例 · 聚焦修复</button>
@@ -382,7 +413,7 @@ function App() {
                 <a href="#/guide">如何接入真实数据与后续任务 <ArrowRight size={14} /></a>
               </section>
               <section className="standalone-panel assessment-guide" aria-labelledby="document-heading">
-                <h2 id="document-heading">Task 3 · PDF 文档转换评估</h2>
+                <h2 id="document-heading">PDF 文档转换评估</h2>
                 <p>同一份两页 PDF，对照独立标注检查正文、标题、阅读顺序、表格、完整性及 Markdown/JSON 一致性。</p>
                 <div className="scenario-actions">
                   {[["correct", "文档示例 · 正确"], ["omitted", "文档示例 · 内容遗漏"], ["table_error", "文档示例 · 表格错误"], ["order_error", "文档示例 · 顺序错误"], ["missing_reference", "文档示例 · 缺少参考"]].map(([candidate, label]) =>
@@ -1893,14 +1924,14 @@ function Guide({ dataDir }: { dataDir?: string }) {
         </div>
       </div>
       <section className="standalone-panel assessment-guide">
-        <h2>三个任务，逐步接入</h2>
-        <p><strong>Task 1 · 已提供：</strong>OpenCode 轨迹导入、过程诊断和已有材料验收。先加载通过、失败、待补证据三个合成场景。</p>
+        <h2>评估场景，逐步接入</h2>
+        <p><strong>OpenCode 轨迹评估：</strong>OpenCode 轨迹导入、过程诊断和已有材料验收。先加载通过、失败、待补证据三个合成场景。</p>
         <pre>agent-review demo --scenario all{"\n"}agent-review list{"\n"}agent-review report RUN_ID --output report.md</pre>
         <p>scenario 可选 focused、iterative、failed、all；不指定时仍加载原有两例。所有命令使用同一个 --data-dir。</p>
-        <p><strong>Task 2 · 已提供：</strong>内置正确、错误、回归和超时候选，在 Docker 中实际执行固定独立测试。候选由模拟器生成，不代表真实 Agent 能力。</p>
+        <p><strong>代码修复评估：</strong>内置正确、错误、回归和超时候选，在 Docker 中实际执行固定独立测试。候选由模拟器生成，不代表真实 Agent 能力。</p>
         <pre>agent-review code-repair --candidate all --data-dir /absolute/review-data{"\n"}agent-review serve --data-dir /absolute/review-data</pre>
         <p>先启动 Docker 并准备 python:3.12-slim 镜像。命令完成后在运行列表查看结果、最终代码 diff 和 baseline/final 验证记录。支持导出含报告的 generic/2 包。</p>
-        <p><strong>Task 3 · 已提供：</strong>自制两页数字 PDF、独立标注、五种模拟候选及实际本地检查。验收正文、标题、阅读顺序、矩形表格、完整性和 Markdown/JSON 一致性。</p>
+        <p><strong>PDF 文档转换评估：</strong>自制两页数字 PDF、独立标注、五种模拟候选及实际本地检查。验收正文、标题、阅读顺序、矩形表格、完整性和 Markdown/JSON 一致性。</p>
         <pre>agent-review document-conversion --candidate all --data-dir /absolute/review-data{"\n"}agent-review document-evaluate RUN_ID --data-dir /absolute/review-data</pre>
         <p>网页可直接运行文档示例，查看转换产物、下载源 PDF 并追溯各项验收证据。单独导入 bundle 不执行评估器，重导入后可点击“运行固定文档检查”。</p>
         <p>OCR、公式、合并单元格和版式保真尚未覆盖；没有接入真实转换 Agent 或 OmniDocBench，简化检查不是 TEDS/CDM。</p>

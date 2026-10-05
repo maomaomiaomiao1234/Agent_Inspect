@@ -31,6 +31,15 @@ from .assessments import (
     public_target,
     telemetry_readiness,
 )
+from .code_repair import (
+    Candidate as CodeRepairCandidate,
+)
+from .code_repair import (
+    DockerError,
+)
+from .code_repair import (
+    run_candidate as run_code_repair_candidate,
+)
 from .contracts import EvaluatorResponse, GenericBundle, GenericTrace, TaskProfile
 from .demo import DemoScenario, scenario_bundles
 from .document_conversion import DocumentCandidate, evaluate_document_run, run_document_candidate
@@ -299,6 +308,39 @@ def create_app(
             else [candidate]
         )
         return {"run_ids": [run_document_candidate(store, item)[0].id for item in selected]}
+
+    @app.post("/api/code-repair-demo")
+    def code_repair_demo(candidate: CodeRepairCandidate = CodeRepairCandidate.correct, use_fixture: bool = False):
+        selected = (
+            [c for c in CodeRepairCandidate if c != CodeRepairCandidate.all]
+            if candidate == CodeRepairCandidate.all
+            else [candidate]
+        )
+        run_ids = []
+        for item in selected:
+            executed = False
+            if not use_fixture:
+                try:
+                    run, _, _ = run_code_repair_candidate(store, item)
+                    run_ids.append(run.id)
+                    executed = True
+                except (DockerError, Exception):
+                    executed = False
+            if not executed:
+                # 降级到预置示例包，确保无 Docker 时也能即刻体验
+                bundle_path = Path("examples/code_repair") / f"{item.value}.bundle.json"
+                if not bundle_path.exists():
+                    alt = Path(__file__).resolve().parent.parent.parent / "examples" / "code_repair" / f"{item.value}.bundle.json"
+                    if alt.exists():
+                        bundle_path = alt
+                if bundle_path.exists():
+                    payload = json.loads(bundle_path.read_text(encoding="utf-8"))
+                    bundle = GenericBundle.model_validate(payload)
+                    run, _ = ingest(store, bundle)
+                    run_ids.append(run.id)
+                else:
+                    raise HTTPException(404, f"Code repair bundle for {item.value} not found")
+        return {"run_ids": run_ids}
 
     @app.post("/api/runs/{run_id}/document-evaluation")
     def document_evaluation(run_id: str):

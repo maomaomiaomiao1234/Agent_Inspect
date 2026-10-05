@@ -164,8 +164,8 @@ test("OpenCode scenarios distinguish pass, fail and missing evidence", async ({ 
   await expect(page.locator(".outcome-bar.fail")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.goto("/#/guide");
-  await expect(page.getByRole("heading", { name: "三个任务，逐步接入" })).toBeVisible();
-  await expect(page.getByText("Task 2 · 已提供：", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "评估场景，逐步接入" })).toBeVisible();
+  await expect(page.getByText("代码修复评估：", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -295,6 +295,6 @@ test("document conversion scenarios show source, outputs and independent checks"
   await page.screenshot({ path: "/private/tmp/agent-review-task3-mobile.png", fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.goto("/#/guide");
-  await expect(page.getByText("Task 3 · 已提供：", { exact: true })).toBeVisible();
+  await expect(page.getByText("PDF 文档转换评估：", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
