@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api, apiFetch, DownloadLink, setAccessToken } from "./api-client";
 import { Assessments } from "./assessments";
+import { ModelCallUsage } from "./usage";
 import {
   Activity,
   ArrowDownToLine,
@@ -1135,10 +1136,7 @@ function RunDetail({
                     </span>
                     {event.data.provenance === "target_reported" && <span>目标自报</span>}
                     {typeof event.data.model === "string" && <span>模型 {event.data.model}</span>}
-                    {event.kind === "llm" && <span>
-                      输入 Token {(event.data.usage as { tokens?: { input?: number } } | null)?.tokens?.input ?? "未知"}
-                      {" · "}输出 Token {(event.data.usage as { tokens?: { output?: number } } | null)?.tokens?.output ?? "未知"}
-                    </span>}
+                    {event.kind === "llm" && <ModelCallUsage data={event.data} />}
                     {event.data.exit_code != null && (
                       <span>退出码 {String(event.data.exit_code)}</span>
                     )}

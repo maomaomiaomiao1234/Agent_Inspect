@@ -385,15 +385,16 @@ def analyze(run: Run) -> Evaluation:
         (
             "tokens_cache_read",
             "缓存读取 Tokens",
-            lambda u: u.get("tokens", {}).get("cache", {}).get("read"),
+            lambda u: u.get("tokens", {}).get("cache_read", u.get("tokens", {}).get("cache", {}).get("read")),
             "tokens",
         ),
         (
             "tokens_cache_write",
             "缓存写入 Tokens",
-            lambda u: u.get("tokens", {}).get("cache", {}).get("write"),
+            lambda u: u.get("tokens", {}).get("cache_write", u.get("tokens", {}).get("cache", {}).get("write")),
             "tokens",
         ),
+        ("tokens_cache_miss", "缓存未命中 Tokens", lambda u: u.get("tokens", {}).get("cache_miss"), "tokens"),
         ("cost_usd", "报告成本", lambda u: u.get("cost"), "USD"),
     ]:
         summary_key = key if key == "cost_usd" else key.removeprefix("tokens_") + "_tokens"
@@ -412,6 +413,7 @@ def analyze(run: Run) -> Evaluation:
             [u["evidence_id"] for u in run.usage],
             unit=unit,
             status="partial" if len(available) != len(values) or not coding and not run.trace_complete
+            or any(u.get("usage_complete") is False for u in run.usage)
             else "observed",
             note=f"{run.framework} 报告值；不把缺失用量填为 0，不包含未导入子会话。"
             + (" 模型价格估算不等同实际账单。" if key == "cost_usd" else ""),

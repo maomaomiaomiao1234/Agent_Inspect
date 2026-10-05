@@ -84,9 +84,9 @@ LLM 接收有界的 README、依赖和 Python 文件片段，跳过 `.env`、敏
 2. **接入检查 Token**：独立检查任务的实际记录，不计入正式题集。
 3. **被测 Agent Token**：正式任务采集到的模型调用。
 
-固定运行模板可观察通过 httpx 发往配置端点的非流式 Chat Completions/Responses 请求；应用该任务的剩余期限和输出 Token 上限。原调用返回用量后记录输入、输出、总 Token，不额外发送模型请求。桥接代码可用 `recorder.model/async_model` 包装其他原生模型调用，用 `recorder.tool/async_tool` 包装真实工具；显式模型包装与 HTTP 观察不重复计数。
+固定运行模板可观察通过 httpx 发往配置端点的同步/异步 JSON 或 SSE Chat Completions/Responses 请求；应用该任务的剩余期限和输出 Token 上限。原调用返回用量后记录输入、输出、总 Token、缓存/推理细分及请求 ID，不额外发送模型请求。桥接代码可用 `recorder.model/async_model` 包装其他原生模型调用，用 `recorder.tool/async_tool` 包装真实工具；显式模型包装与 HTTP 观察不重复计数。
 
-SDK `usage`、`usage_metadata`、`token_usage` 中受支持的字段可采集。流式调用、其他网络库、后台线程/子 Agent、未包装的工具可能没有记录。覆盖默认 `partial`，已采集 Token 显示 `≥数值`；没有数据保持未知，费用不凭 Token 估算。工具不存在于轨迹不能确认它没有被调用。接入失败同样保留已有模型/工具记录。
+SDK `usage`、`usage_metadata`、`token_usage` 中受支持的字段可采集。httpx 流式末尾用量和实际重试分别采集；其他网络库、未传播上下文的后台线程/子 Agent、未包装的工具可能没有记录。用量完整性和接入方式见 [通用采集指南](PROVIDER_TELEMETRY.zh-CN.md)。覆盖默认 `partial`，已采集 Token 显示 `≥数值`；没有数据保持未知，费用不凭 Token 估算。工具不存在于轨迹不能确认它没有被调用。接入失败同样保留已有模型/工具记录。
 
 会话实例按 `session_id` 隔离，最多保留 64 个空闲/活动会话；原 Agent 自身的外部全局存储是否隔离，仍由正式题集检验。HTTP 期限不保证供应商调用立即停止计费。
 

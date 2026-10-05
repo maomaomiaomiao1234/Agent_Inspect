@@ -49,7 +49,7 @@ def telemetry_summary(turns, execution_complete=True):
     }
 
 
-def trace_events(trace, *, job_id, case_id, session_id, turn):
+def trace_events(trace, *, job_id, case_id, session_id, turn, budget_id=None, attempt=None):
     if trace is None:
         return []
     prefix = f"target_{turn}_"
@@ -59,7 +59,9 @@ def trace_events(trace, *, job_id, case_id, session_id, turn):
             "id": prefix + event["id"],
             "parent_id": prefix + event["parent_id"] if event.get("parent_id") else None,
             "provenance": "target_reported",
-            "context": {"job_id": job_id, "case_id": case_id, "session_id": session_id, "turn": turn},
+            "context": {**event.get("context", {}), "job_id": job_id, "assessment_id": job_id,
+                        "case_id": case_id, "session_id": session_id, "turn": turn,
+                        "budget_id": budget_id, "attempt": attempt, "call_id": prefix + event["id"]},
         }
         for event in trace["events"]
     ]

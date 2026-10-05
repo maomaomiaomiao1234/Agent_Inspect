@@ -456,6 +456,7 @@ def test_llm_adaptation_pipeline_validates_repairs_exports_and_keeps_usage_separ
     import zipfile
     with zipfile.ZipFile(io.BytesIO(pipeline.adapter_archive(job["id"]))) as archive:
         assert "bridge.py" in archive.namelist() and "source/native.py" not in archive.namelist()
+        assert "provider_telemetry.py" in archive.namelist()
         assert json.loads(archive.read("provenance.json"))["status"] == "validated"
         assert all(".env" != name for name in archive.namelist())
     assert bundle["adaptation"]["generation_usage"]["fields"]["total_tokens"]["value"] == len(generations) * 500

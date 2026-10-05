@@ -289,7 +289,7 @@ export function Assessments() {
         </li>))}</ul>
       </details>}
       <details><summary>Token 采集状态与原因</summary><ul>{job.results.flatMap(r => Object.entries(r.usage?.fields || {})
-        .filter(([key]) => ["input_tokens", "output_tokens", "total_tokens", "cost_usd"].includes(key))
+        .filter(([key]) => ["input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens", "cost_usd"].includes(key))
         .map(([key, field]) => <li key={`${r.run_id}-${key}`}>{r.case_id} / {r.budget_id} · {key}：
           <UsageValue usage={r.usage} field={key} /> · {field.source} · {field.reason}</li>))}</ul></details>
       </details>

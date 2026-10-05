@@ -43,7 +43,7 @@ business output is not. Config has api_url, model, api_key, from server environm
 Do not hardcode URLs/models/credentials. Never import openai/httpx/requests in the bridge to create
 an independent model caller. Configure the native agent through its actual supported API.
 The runtime already handles HTTP, authentication, session isolation, error handling and native-entry
-observation. It observes nonstreaming httpx model usage when possible; other native calls can be
+observation. It observes JSON and SSE httpx model usage when possible; other native calls can be
 wrapped with recorder.model(name, fn, *args, **kwargs) or recorder.async_model; tools similarly use
 recorder.tool/async_tool. Never invent usage or events. Capture only actual calls.
 Source is at /opt/agent/source (and source/src on sys.path). bridge_code is outside that directory.
@@ -293,6 +293,8 @@ def stage_adapter(draft, entry, root, context, *, copy_source):
     source_hash = copy_source(root, context / "source")
     runtime = files("agent_trace_review").joinpath("repository_templates/auto_runtime.py").read_bytes()
     (context / "auto_runtime.py").write_bytes(runtime)
+    telemetry = files("agent_trace_review").joinpath("provider_telemetry.py").read_bytes()
+    (context / "provider_telemetry.py").write_bytes(telemetry)
     (context / "bridge.py").write_text(draft.bridge_code)
     (context / "entry.json").write_text(canonical(entry))
     deps = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "httpx>=0.28,<1", *draft.dependencies]
@@ -304,7 +306,7 @@ def stage_adapter(draft, entry, root, context, *, copy_source):
         dockerfile += 'RUN ["pip", "install", "--no-cache-dir", "-r", ' + json.dumps("/opt/agent/source/" + draft.requirements) + "]\n"
     dockerfile += ("COPY adapter-requirements.txt /opt/agent/adapter-requirements.txt\n"
                    "RUN pip install --no-cache-dir -r /opt/agent/adapter-requirements.txt\n"
-                   "COPY bridge.py auto_runtime.py entry.json /opt/agent/\n"
+                   "COPY bridge.py auto_runtime.py provider_telemetry.py entry.json /opt/agent/\n"
                    "ENV PYTHONDONTWRITEBYTECODE=1 HOME=/tmp HF_HOME=/tmp/huggingface\n"
                    "USER 65534:65534\nEXPOSE 9000\n"
                    'ENTRYPOINT ["python", "-B", "/opt/agent/auto_runtime.py"]\n')
@@ -315,5 +317,6 @@ def stage_adapter(draft, entry, root, context, *, copy_source):
     (context / "agent-review.json").write_text(canonical(manifest.model_dump()))
     return manifest, {"recipe": "llm", "adaptation_version": VERSION, "source_context_hash": source_hash,
         "adapter_hash": digest(draft.bridge_code.encode()), "runtime_hash": digest(runtime), "native_entry": entry,
-        "context_hash": digest([source_hash, draft.model_dump(), runtime.decode(), dockerfile]),
+        "telemetry_hash": digest(telemetry),
+        "context_hash": digest([source_hash, draft.model_dump(), runtime.decode(), telemetry.decode(), dockerfile]),
         "manifest_hash": digest(manifest.model_dump()), "dockerfile": "Dockerfile", "limitations": draft.limitations}

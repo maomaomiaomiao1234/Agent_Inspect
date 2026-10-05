@@ -30,6 +30,7 @@ def engine_hash():
         "assessment_store.py",
         "target_client.py",
         "target_telemetry.py",
+        "provider_telemetry.py",
         "usage_accounting.py",
         "server_config.py",
         "repositories.py",
@@ -198,7 +199,8 @@ def _usage(turns, budget, execution_complete=True):
             adherence = "not_applicable"
     return {
         **{key: field["value"] if field["status"] == "complete" else None
-           for key, field in summary["fields"].items() if key != "reasoning_tokens"},
+           for key, field in summary["fields"].items()
+           if key in {"input_tokens", "output_tokens", "total_tokens", "cost_usd"}},
         **summary,
         "output_token_budget": adherence,
     }
@@ -250,7 +252,9 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
             }
         )
         try:
-            response = client.call(request, remaining)
+            response = client.call(request, remaining, context={
+                "assessment_id": job_id, "case_id": case.id, "budget_id": budget.id, "attempt": attempt,
+            })
         except TargetError as exc:
             state, error = ("timeout" if exc.code == "timeout" else "error"), exc.code
             events.append(
@@ -285,7 +289,8 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
                 "adapter_evidence": response.adapter_evidence.model_dump() if response.adapter_evidence else None,
             }
         )
-        events.extend(trace_events(trace, job_id=job_id, case_id=case.id, session_id=session, turn=index))
+        events.extend(trace_events(trace, job_id=job_id, case_id=case.id, session_id=session, turn=index,
+                                   budget_id=budget.id, attempt=attempt))
         events.append(
             {
                 "id": f"assistant_{index}",
@@ -689,6 +694,11 @@ def assessment_markdown(job):
             field = usage.get("fields", {}).get(key)
             if field:
                 lines.append(f"- {key}：{field['status']} / {field['source']}；{field['reason']}")
+        for key, label in (("reasoning_tokens", "推理"), ("cache_read_tokens", "缓存命中"),
+                           ("cache_write_tokens", "缓存写入"), ("cache_miss_tokens", "缓存未命中")):
+            field = usage.get("fields", {}).get(key, {})
+            if field.get("value") is not None:
+                lines.append(f"- {label} Token：{format_usage(usage, key)}（输入或输出细分，不重复加入总量）")
         for model in telemetry.get("models", []):
             model_usage = model.get("usage", {"total_tokens": model["tokens"]["total"]})
             lines.append(f"- 模型 {model['model']}：{model['calls']} 次；Token {format_usage(model_usage, 'total_tokens')}；耗时 {display(model['duration_ms'])} ms")

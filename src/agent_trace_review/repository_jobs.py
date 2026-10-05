@@ -425,7 +425,7 @@ class RepositoryManager:
                         raise RepositoryError("required_environment_unavailable")
                     self.db.patch(job_id, request=request.model_dump(), recipe="llm")
                     row["files"] = {name: (work / "context" / name).read_text() for name in
-                                    ("bridge.py", "Dockerfile", "agent-review.json", "entry.json", "adapter-requirements.txt", "auto_runtime.py")}
+                                    ("bridge.py", "Dockerfile", "agent-review.json", "entry.json", "adapter-requirements.txt", "auto_runtime.py", "provider_telemetry.py")}
                     save_adaptation()
                     image_id = build_image(plan)
                     stage("validating")
@@ -569,7 +569,7 @@ class RepositoryManager:
         output = io.BytesIO()
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
             for name, content in selected["files"].items():
-                if name in {"bridge.py", "Dockerfile", "agent-review.json", "entry.json", "adapter-requirements.txt", "auto_runtime.py"}:
+                if name in {"bridge.py", "Dockerfile", "agent-review.json", "entry.json", "adapter-requirements.txt", "auto_runtime.py", "provider_telemetry.py"}:
                     archive.writestr(name, content)
             archive.writestr("provenance.json", canonical({"repository_url": job["request"]["repository_url"],
                 "commit": job["commit"], "source_hash": adaptation["source_hash"], "attempt": selected["attempt"],

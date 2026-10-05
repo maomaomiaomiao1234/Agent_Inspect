@@ -217,9 +217,10 @@ class TargetResponse(Contract):
             calls = [e for e in self.trace.events if e.kind == "llm"]
             if calls:
                 totals = {}
-                for key in ("input", "output", "total", "reasoning"):
+                for key in type(Usage().tokens).model_fields:
                     values = [getattr(e.usage.tokens, key) if e.usage else None for e in calls]
-                    totals[key] = sum(values) if all(v is not None for v in values) else None
+                    totals[key] = sum(values) if all(v is not None for v in values) and all(
+                        e.context.get("usage_complete") is not False for e in calls) else None
                 if totals["total"] is None and totals["input"] is not None and totals["output"] is not None:
                     totals["total"] = totals["input"] + totals["output"]
                 costs = [e.usage.cost_usd if e.usage else None for e in calls]

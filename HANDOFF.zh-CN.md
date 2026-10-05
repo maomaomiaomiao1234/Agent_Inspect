@@ -1,5 +1,15 @@
 # Agent_Inspect 开发交接
 
+## 通用模型用量采集第二阶段（2026-10-05）
+
+本轮用户确认继续 Token 统计第二阶段。新增 `provider_telemetry.py`：OpenAI 兼容/DeepSeek 字段规范化、同步/异步模型包装、按任务上下文启用的 httpx JSON/SSE 观察。SDK 实际重试分别计数，显式包装不重复计入，流式快照不累加；失败/取消/提前关闭保留已知下界。缓存命中/写入/未命中和推理用量保留为输入或输出细分，不加进总量。
+
+评测任务关联通过可选 HTTP 头传给自动适配器，原 target-v1 请求 JSON 不变；contextvars 隔离并发任务，通用轨迹保留请求 ID 和由评测器绑定的任务字段。采集模块进入生成容器、构建哈希和适配 ZIP；网页、Markdown、JSON、运行指标及 Profile 使用相同证据。旧五字段用量摘要继续可读，历史记录不补写。
+
+使用与范围见 [通用采集指南](docs/PROVIDER_TELEMETRY.zh-CN.md)，验证见 [第二阶段验收](PROVIDER_TELEMETRY_VALIDATION.zh-CN.md)。后端 462 passed/2 skipped、Chrome 8 passed、Ruff/前端构建/wheel 检查通过，项目内 Skill 已刷新且启动器 6 项测试通过。实际 OpenAI SDK 3.24.0 MockTransport 校验和 Docker 流式流程通过；临时测试服务已关闭。测试使用独立临时目录及合成模型响应，没有读取/修改本地 `.env` 或调用付费供应商。进入本轮前 `.env.example` 已有用户修改，保持原样。
+
+下一步是文档第三阶段：试点受控模型网关。当前仍为目标进程内采集，不能恢复目标崩溃或 HTTP 超时且未返回的用量，也不覆盖未知网络库或未传播上下文的跨进程请求。不要把第二阶段描述为全框架采集或网关已完成。
+
 ## 生成不设 Token 上限并开启思考（2026-10-05）
 
 按用户最新要求，适配器生成配置独立覆盖 `ReviewConfig` 的输出与超时字段。未设置/留空/auto 的 `AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS` 解析为 None，真实请求完全省略 `max_tokens` 和 `max_completion_tokens`；正整数仍作为显式可选限制，不再继承共享评审配置的 32768 上限。DeepSeek 默认启用 thinking，其他供应商未显式设置时不发送扩展参数。本机 `.env` 已修改为留空输出上限、thinking=enabled、timeout=900，仅调整这些生成参数，凭据未输出且 `.env` 保持 Git 忽略。
@@ -306,15 +316,13 @@ REVIEW_TEST_URL=http://127.0.0.1:18765 REVIEW_CODE_REPAIR_FIXTURES=1 npm --prefi
 ## 8. 下一会话接续指令
 
 ```text
-阅读 HANDOFF.zh-CN.md、docs/ACTIVE_ASSESSMENT.zh-CN.md 和 ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md。
-Task 1/2/3 受控示例及 Task 4 第一版主动评测服务已完成。
-当前目录没有 .git；GitHub 已发布此前实现，提交使用独立克隆，以本地当前源码核对远端状态。
-阅读 examples/smolagents/README.md 和 examples/smolagents/VALIDATION.zh-CN.md。用户已配置 DeepSeek 密钥并授权真实测试：单题 1/1、完整题集 6/6 pass。服务本轮保持运行，继续前检查 9091/8765 状态，复用 review-data-smolagents 中的报告；不要打印凭据或无故重复付费测试。
-自动生成题集已支持网页/CLI/API，见 SUITE_GENERATION_VALIDATION.zh-CN.md；默认12题文件已生成，30题上限校准已通过。当前模板只适用于 smolagents 示例约定，不支持根据任意仓库用模型自动出题。
-下一阶段按比赛要求适配参赛 Agent、独立题集或构建来源。
-复用现有 trace/Profile/external 协议；区分模拟候选、实际验证和未覆盖维度。
-当前文档评估器只支持固定两页数字 PDF 和约定块 ID；不支持任意 PDF 自动对齐、OCR 或公式。
-不把转换器输出当作 ground truth，不把简化指标称为官方 TEDS/CDM。
-主动评测使用管理员目标表、固定题集和单进程服务，不认证源码到镜像来源或强制供应商费用。
-测试使用独立 data-dir，避免修改原 .agent-review。wheel 与 skill 已重建，修改后须再次刷新。
+先读本文件顶部、docs/PROVIDER_TELEMETRY.zh-CN.md、PROVIDER_TELEMETRY_VALIDATION.zh-CN.md。
+Task 1/2/3 控制示例、Task 4 主动评测、Python LLM 自动适配和 Token 统计第二阶段已完成。
+当前是 Git main 工作区；先检查 git status，保护用户已有改动，不按历史“无 .git”记录操作。
+下一开发阶段是 docs/TOKEN_USAGE_EXPLORATION.zh-CN.md 中第三阶段的受控模型网关试点。
+通用 SDK/HTTP 采集默认 partial，只覆盖配置端点与实际传播的上下文，不能恢复崩溃后未返回的进程内记录。
+被测、接入检查和适配生成用量分别保存；缓存/推理细分不与输入/输出重复相加。
+真实陌生仓库验证需明确目标和调用范围；不要无故重复付费测试，不输出 .env 凭据。
+测试使用独立 data-dir，避免修改原 .agent-review；旧服务状态需现场检查，历史 PID 不作为现状。
+修改代码后刷新网页、wheel、check_package 和项目内 Skill；安装到全局技能目录不是自动步骤。
 ```

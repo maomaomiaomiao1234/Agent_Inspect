@@ -51,14 +51,33 @@ def run_agent(agent, request, recorder):
     return agent.run(request, recorder)
 '''
 
+STREAM_NATIVE = NATIVE.replace(
+    'response = client.post(self.config["api_url"] + "/chat/completions", json=body,\n'
+    '                headers={"Authorization": "Bearer " + self.config["api_key"]})\n'
+    '            response.raise_for_status()\n'
+    '            output = json.loads(response.json()["choices"][0]["message"]["content"])',
+    'body.update(stream=True, stream_options={"include_usage": True})\n'
+    '            text = ""\n'
+    '            with client.stream("POST", self.config["api_url"] + "/chat/completions", json=body,\n'
+    '                    headers={"Authorization": "Bearer " + self.config["api_key"]}) as response:\n'
+    '                response.raise_for_status()\n'
+    '                for line in response.iter_lines():\n'
+    '                    if line.startswith("data: ") and line != "data: [DONE]":\n'
+    '                        for choice in json.loads(line[6:]).get("choices", []):\n'
+    '                            text += choice.get("delta", {}).get("content", "")\n'
+    '            output = json.loads(text)',
+)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--stream", action="store_true", help="Exercise incremental provider SSE in the real container")
     args = parser.parse_args()
     data_dir = args.data_dir or Path(tempfile.mkdtemp(prefix="agent-inspect-auto-adapt-validation-"))
     counters = {"generation": 0, "target": 0}
-    definition = next(n for n in ast.walk(ast.parse(NATIVE)) if isinstance(n, ast.FunctionDef) and n.name == "run")
+    native = STREAM_NATIVE if args.stream else NATIVE
+    definition = next(n for n in ast.walk(ast.parse(native)) if isinstance(n, ast.FunctionDef) and n.name == "run")
     proposal = {"supported": True, "entry": {"path": "native_agent.py", "symbol": "NativeAgent.run", "line": definition.lineno},
                 "bridge_code": BRIDGE, "limitations": ["Synthetic validation fixture, not third-party capability scores."]}
 
@@ -69,9 +88,17 @@ def main():
             counters["generation" if generation else "target"] += 1
             content = canonical(proposal) if generation else canonical({"ready": True} if "ready=true" in body["messages"][-1]["content"] else {"answer": 19})
             usage = {"prompt_tokens": 100, "completion_tokens": 200, "total_tokens": 300} if generation else {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+            if not generation:
+                usage.update(prompt_cache_hit_tokens=6, prompt_cache_miss_tokens=4,
+                             completion_tokens_details={"reasoning_tokens": 2})
             result = canonical({"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": content}}], "usage": usage}).encode()
+            streaming = not generation and body.get("stream")
+            if streaming:
+                result = ("data: " + canonical({"choices": [{"delta": {"content": content}}]}) + "\n\n"
+                          + "data: " + canonical({"choices": [], "usage": usage}) + "\n\ndata: [DONE]\n\n").encode()
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", "text/event-stream" if streaming else "application/json")
+            self.send_header("x-request-id", "synthetic-" + str(counters["target"]))
             self.send_header("Content-Length", str(len(result)))
             self.end_headers()
             self.wfile.write(result)
@@ -86,7 +113,7 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="agent-inspect-native-fixture-") as temp:
             source = Path(temp)
-            (source / "native_agent.py").write_text(NATIVE)
+            (source / "native_agent.py").write_text(native)
             (source / "README.md").write_text("Synthetic native Python agent for integration validation only.\n")
             subprocess.run(["git", "init", "--quiet", str(source)], check=True)
             subprocess.run(["git", "-C", str(source), "add", "."], check=True)
@@ -122,12 +149,19 @@ def main():
                 assert row["usage"]["fields"]["total_tokens"]["value"] == 15
                 turns = bundle["assessment"]["runs"][0]["bundle"]["trace"]["artifacts"]["assessment"]["turns"]
                 assert turns[0]["adapter_evidence"]["observed"]
+                assert row["usage"]["fields"]["cache_read_tokens"]["value"] == 6
+                assert row["usage"]["fields"]["reasoning_tokens"]["value"] == 2
+                model_call = next(e for e in turns[0]["trace"]["events"] if e["kind"] == "llm")
+                assert model_call["context"]["assessment_id"] == result["assessment_id"]
+                assert model_call["context"]["case_id"] == "sum"
+                assert model_call["context"]["budget_id"] == "default"
+                assert model_call["context"]["provider_request_id"].startswith("synthetic-")
                 assert counters == {"generation": 1, "target": 2}
                 for value in ("synthetic-generator-key", "synthetic-target-key"):
                     assert value not in destination.read_text()
                 print(canonical({"state": result["state"], "cleanup": result["cleanup"], "outcome": row["outcome"],
                     "native_entry_observed": True, "target_tokens": row["usage"]["fields"]["total_tokens"],
-                    "requests": counters, "evidence": str(destination), "job_id": job["id"]}))
+                    "requests": counters, "stream": args.stream, "evidence": str(destination), "job_id": job["id"]}))
     finally:
         if repositories:
             repositories.close()

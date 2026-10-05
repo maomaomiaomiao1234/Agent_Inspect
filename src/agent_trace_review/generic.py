@@ -187,6 +187,7 @@ def import_generic(
                     "evidence_id": ref,
                     "tokens": item.usage.tokens.model_dump() if item.usage else {},
                     "cost": item.usage.cost_usd if item.usage else None,
+                    "usage_complete": item.context.get("usage_complete"),
                 }
             )
     usage_level = "observed" if run.usage else "unavailable"

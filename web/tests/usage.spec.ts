@@ -33,6 +33,11 @@ for (const mode of ["complete", "partial", "offline"]) {
     const job = JSON.parse(await readFile((await file.path())!, "utf-8"));
     expect(job.results[0].usage.fields.total_tokens.status).toBe(mode === "offline" ? "not_applicable" : mode);
     expect(job.curves[0].usage.fields.total_tokens.value).toBe(mode === "offline" ? null : mode === "partial" ? 15 : 30);
+    if (mode !== "offline") {
+      expect(job.results[0].usage.fields.reasoning_tokens.value).toBe(mode === "partial" ? 2 : 4);
+      expect(job.results[0].usage.fields.cache_read_tokens.value).toBe(mode === "partial" ? 6 : 12);
+      await expect(details).toContainText("cache_read_tokens");
+    }
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
     await page.getByRole("link", { name: "查看对话和验收", exact: true }).click();

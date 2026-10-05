@@ -12,6 +12,7 @@ from contextlib import contextmanager
 import httpx
 
 from .assessment_contracts import TargetDefinition, TargetResponse
+from .provider_telemetry import CONTEXT_HEADERS
 from .util import canonical, redact
 
 MAX_REQUEST = 128 * 1024
@@ -50,9 +51,11 @@ class TargetClient:
         if target.deployment:
             self.secrets += [os.environ.get(v, "") for v in target.deployment.environment.values()]
 
-    async def _exchange(self, method, path, payload, timeout):
+    async def _exchange(self, method, path, payload, timeout, context=None):
         async def stream():
             headers = {"Accept": "application/json", "Accept-Encoding": "identity"}
+            headers.update({header: str(context[key]) for key, header in CONTEXT_HEADERS.items()
+                            if context and key in context})
             if self.token:
                 headers["Authorization"] = "Bearer " + self.token
             async with httpx.AsyncClient(
@@ -88,10 +91,10 @@ class TargetClient:
         except httpx.HTTPError:
             raise TargetError("connection_error") from None
 
-    def call(self, payload: dict, timeout: float) -> TargetResponse:
+    def call(self, payload: dict, timeout: float, *, context=None) -> TargetResponse:
         if len(canonical(payload).encode()) > MAX_REQUEST:
             raise TargetError("request_too_large")
-        raw = asyncio.run(self._exchange("POST", self.target.task_path, payload, timeout))
+        raw = asyncio.run(self._exchange("POST", self.target.task_path, payload, timeout, context))
         try:
             response = TargetResponse.model_validate(scrub(raw, self.secrets))
             if response.trace and (

@@ -7,9 +7,9 @@ HTTP 任务协议可接入其他 Agent，不限于 smolagents 示例。每类任
 | 材料 | 字段与用途 | 来源 |
 | --- | --- | --- |
 | 外部任务 | 请求、答案、HTTP 耗时、执行状态 | 评审服务观察 |
-| 模型调用 | id、配置的模型名、状态、输入/输出/总 Token、耗时 | 被测服务采集并自报 |
+| 模型调用 | id、请求/返回模型、供应商请求 ID、状态、输入/输出/总 Token、缓存/推理细分、耗时 | 被测服务采集并自报 |
 | 工具调用 | id、工具名、参数、结果、状态、读写类型、耗时、关联的模型调用 | 被测服务采集并自报 |
-| 任务关联 | job_id、case_id、session_id、turn、run_id | 评审服务生成和绑定 |
+| 任务关联 | assessment_id/job_id、case_id、budget_id、attempt、session_id、turn、call_id、run_id | 评审服务生成和绑定 |
 | 资源汇总 | 案例的输入/输出/总 Token，模型/工具调用及错误次数，各模型用量 | 从上述材料派生 |
 
 smolagents 示例已对模型后端、三个业务工具和 `final_answer` 加入采集。`output._execution.tools` 保留原来三个业务工具的摘要，协议 `trace.events` 包括 `final_answer`。例如 `Compute 12 + 7` 的 offline 校准会记录两次脚本规划调用、一次 calculator、一次 final_answer；不调用模型服务，Token 和费用显示“不适用（离线校准）”，不会伪造零用量。真实 API 的逐次 Token 来自 SDK 返回值。
@@ -55,7 +55,7 @@ smolagents 示例已对模型后端、三个业务工具和 `final_answer` 加�
 4. 将采集结果绑定请求中的 `session_id` 和 `turn`，随答案返回。完整覆盖当前轮所有调用时才声明 `complete`；缺少子 Agent、后台工具或模型请求时使用 `partial`。
 5. 失败任务可返回 `execution_status: "error"`、`error: "agent_execution_failed"`、`output: null` 和已采集的 trace，评审器会保留证据并停止该案例后续轮次。HTTP 错误仍按原有失败路径处理。
 
-可以参考 `examples/smolagents/telemetry.py` 的 `CallRecorder`。它的工具 Mixin 用于 smolagents；其他框架应包装自己的真实调用入口，输出同一协议。仅提供最终答案的第三方 HTTP API，无法从评审端自动恢复其内部工具和 Token。
+通用模型入口可使用 `provider_telemetry.ModelRecorder`，支持 httpx JSON/SSE 和原生同步/异步模型包装，见 [通用采集指南](PROVIDER_TELEMETRY.zh-CN.md)。工具包装可以参考 `examples/smolagents/telemetry.py` 的 `CallRecorder`。它的工具 Mixin 用于 smolagents；其他框架应包装自己的真实调用入口，输出同一协议。仅提供最终答案的第三方 HTTP API，无法从评审端自动恢复其内部工具和 Token。
 
 约束：每响应最多 200 条调用，响应总大小仍为 256 KiB；id 在当前轮内唯一，parent_id 引用已记录的调用。评审器会验证会话/轮次、Token 类型与上下限、计时值及汇总一致性，不执行记录中的内容。跨轮重复的调用 id 会在通用轨迹中加轮次前缀。
 
@@ -72,7 +72,7 @@ smolagents 示例已对模型后端、三个业务工具和 `final_answer` 加�
 
 `TargetResponse.usage_mode` 可选值为 `model`、`offline`、`unknown`（默认）。只有目标明确声明 `offline` 才显示不适用；`demo: true` 不足以判断是否调用模型。离线响应不能同时提供模型用量。
 
-评测 JSON 的 `results[].usage.fields`、预算的 `curves[].usage.fields` 和通用轨迹的 `usage_summary.fields` 使用同一格式，包含 `input_tokens`、`output_tokens`、`total_tokens`、`reasoning_tokens`、`cost_usd` 五个字段。例如已采集一次 10/5/15 的调用，随后另一次调用失败且未返回用量：
+评测 JSON 的 `results[].usage.fields`、预算的 `curves[].usage.fields` 和通用轨迹的 `usage_summary.fields` 使用同一格式，包含 `input_tokens`、`output_tokens`、`total_tokens`、`reasoning_tokens`、`cost_usd`，新记录还包含 `cache_read_tokens`、`cache_write_tokens`、`cache_miss_tokens`。旧五字段摘要继续兼容。例如已采集一次 10/5/15 的调用，随后另一次调用失败且未返回用量：
 
 ```json
 {"total_tokens": {"value": 15, "status": "partial", "source": "calls", "reason": "执行未完成或仍有未完成案例，仅表示已观测下界。"}}
@@ -91,9 +91,9 @@ smolagents 示例已对模型后端、三个业务工具和 `final_answer` 加�
 
 目标 `/health` 可声明 `usage_mode` 和 `usage_collection`（`call_usage` / `aggregate_usage` / `not_applicable`），网页「检查 Token 采集」调用 `GET /api/targets/{id}/telemetry-readiness`；只检查已登记服务的健康接口，不执行任务或启动容器。采集声明不证明供应商实际返回了所有字段，每次响应仍单独判断完整性。未配置健康接口、未启动 Docker 目标或未声明采集时保留未知。
 
-该阶段仍依赖目标采集和自报，不包含通用 SDK 包装或受控模型网关。评审模型 Token 与被测 Agent 用量分别保存；费用未知时不会按模型价格伪造账单。
+当前包含通用 SDK/HTTP 包装，仍依赖目标采集和自报；尚未包含受控模型网关。评审模型 Token 与被测 Agent 用量分别保存；费用未知时不会按模型价格伪造账单。
 
-后续新增的 [Python 自动适配](AUTO_ADAPTATION.zh-CN.md) 提供固定容器运行模板，可观察已配置模型端点的 httpx 非流式请求，以及显式包装的原生模型/工具调用；这不等同于全框架遥测或受控模型网关。其可选 `adapter_evidence` 保存源文件路径、符号、哈希、入口是否被观察及有界异常类型。自动适配任务逐轮校验这些自报证据，失败时保留已有用量并停止确认能力通过。
+后续新增的 [Python 自动适配](AUTO_ADAPTATION.zh-CN.md) 提供固定容器运行模板，可观察已配置模型端点的 httpx JSON/SSE 请求，以及显式包装的原生模型/工具调用；这不等同于全框架遥测或受控模型网关。其可选 `adapter_evidence` 保存源文件路径、符号、哈希、入口是否被观察及有界异常类型。自动适配任务逐轮校验这些自报证据，失败时保留已有用量并停止确认能力通过。
 
 ## 查看和导出
 

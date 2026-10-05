@@ -24,6 +24,9 @@ class Tokens(Contract):
     output: int | None = Field(None, ge=0, strict=True)
     total: int | None = Field(None, ge=0, strict=True)
     reasoning: int | None = Field(None, ge=0, strict=True)
+    cache_read: int | None = Field(None, ge=0, strict=True)
+    cache_write: int | None = Field(None, ge=0, strict=True)
+    cache_miss: int | None = Field(None, ge=0, strict=True)
 
 
 class Usage(Contract):

@@ -1,7 +1,6 @@
 """Evaluator-owned target-v1 server. Copied into Docker, never imports target on host."""
 
 import asyncio
-import contextvars
 import hashlib
 import inspect
 import json
@@ -19,8 +18,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-CURRENT = contextvars.ContextVar("adapter_recorder", default=None)
-EXPLICIT_MODEL = contextvars.ContextVar("adapter_explicit_model", default=False)
+if __package__:
+    from ..provider_telemetry import CONTEXT_HEADERS, CURRENT, ModelRecorder, instrument_httpx
+else:
+    from provider_telemetry import CONTEXT_HEADERS, CURRENT, ModelRecorder, instrument_httpx
 
 
 class TaskRequest(BaseModel):
@@ -44,133 +45,66 @@ def safe(value):
         return "[omitted:non-json-value]"
 
 
-def usage_of(value):
-    keys = ("usage", "usage_metadata", "token_usage")
-    usage = next((value.get(k) for k in keys if value.get(k) is not None), None) if isinstance(value, dict) else next(
-        (getattr(value, k) for k in keys if getattr(value, k, None) is not None), None)
-    if usage is None:
-        return None
-    if hasattr(usage, "model_dump"):
-        usage = usage.model_dump()
-    elif not isinstance(usage, dict):
-        usage = {key: getattr(usage, key) for key in ("input_tokens", "output_tokens", "total_tokens") if hasattr(usage, key)}
-    if not isinstance(usage, dict):
-        return None
-    tokens = {}
-    for name, keys in {"input": ("prompt_tokens", "input_tokens"), "output": ("completion_tokens", "output_tokens"),
-                       "total": ("total_tokens",)}.items():
-        found = next((usage[k] for k in keys if type(usage.get(k)) is int and usage[k] >= 0), None)
-        if found is not None:
-            tokens[name] = found
-    if "input" in tokens and "output" in tokens and "total" not in tokens:
-        tokens["total"] = tokens["input"] + tokens["output"]
-    return {"tokens": tokens} if tokens else None
-
-
-class Recorder:
-    def __init__(self, request, config):
+class Recorder(ModelRecorder):
+    def __init__(self, request, config, context=None):
+        super().__init__(session_id=request["session_id"], turn=request["turn"],
+                         api_url=config["api_url"], model=config["model"], context=context)
         self.request, self.config = request, config
-        self.events = []
         self.started = time.monotonic()
 
     def remaining(self):
-        deadline = float(self.request["budget"].get("deadline_seconds", 60))
-        remaining = deadline - (time.monotonic() - self.started)
+        remaining = float(self.request["budget"].get("deadline_seconds", 60)) - (time.monotonic() - self.started)
         if remaining <= 0:
             raise TimeoutError("budget deadline")
         return remaining
 
     def begin(self, kind, name, args=None, kwargs=None):
         self.remaining()
-        if len(self.events) >= 180:
-            raise RuntimeError("event limit")
-        event = {"id": f"call-{len(self.events) + 1}", "kind": kind, "status": "unknown"}
-        event["model" if kind == "llm" else "tool"] = str(name)[:200]
+        event, started = super().begin(kind, name)
         if kind == "tool":
+            event["tool"] = event.pop("model")
             inputs = safe({"args": list(args or ()), "kwargs": kwargs or {}})
             event["input"] = inputs if isinstance(inputs, dict) else {"omitted": inputs}
-        self.events.append(event)
-        return event, time.monotonic()
+        return event, started
 
-    def finish(self, event, started, value=None, error=False):
+    def finish_tool(self, event, started, value=None, error=False):
         event.update(status="error" if error else "completed", duration_ms=round((time.monotonic() - started) * 1000, 3))
-        if event["kind"] == "llm":
-            usage = usage_of(value)
-            if usage:
-                event["usage"] = usage
-        elif not error:
+        if not error:
             event["output"] = safe(value)
 
-    def _call(self, kind, name, fn, args, kwargs):
-        event, started = self.begin(kind, name, args, kwargs)
-        marker = EXPLICIT_MODEL.set(kind == "llm" or EXPLICIT_MODEL.get())
+    def tool(self, name, fn, *args, **kwargs):
+        event, started = self.begin("tool", name, args, kwargs)
         try:
             value = fn(*args, **kwargs)
-            self.finish(event, started, value)
+            self.finish_tool(event, started, value)
             return value
-        except Exception:
-            self.finish(event, started, error=True)
+        except BaseException:
+            self.finish_tool(event, started, error=True)
             raise
-        finally:
-            EXPLICIT_MODEL.reset(marker)
-
-    async def _async_call(self, kind, name, fn, args, kwargs):
-        event, started = self.begin(kind, name, args, kwargs)
-        marker = EXPLICIT_MODEL.set(kind == "llm" or EXPLICIT_MODEL.get())
-        try:
-            value = await fn(*args, **kwargs)
-            self.finish(event, started, value)
-            return value
-        except Exception:
-            self.finish(event, started, error=True)
-            raise
-        finally:
-            EXPLICIT_MODEL.reset(marker)
-
-    def model(self, name, fn, *args, **kwargs):
-        return self._call("llm", name, fn, args, kwargs)
-
-    def tool(self, name, fn, *args, **kwargs):
-        return self._call("tool", name, fn, args, kwargs)
-
-    async def async_model(self, name, fn, *args, **kwargs):
-        return await self._async_call("llm", name, fn, args, kwargs)
 
     async def async_tool(self, name, fn, *args, **kwargs):
-        return await self._async_call("tool", name, fn, args, kwargs)
+        event, started = self.begin("tool", name, args, kwargs)
+        try:
+            value = await fn(*args, **kwargs)
+            self.finish_tool(event, started, value)
+            return value
+        except BaseException:
+            self.finish_tool(event, started, error=True)
+            raise
 
-
-def instrument_httpx():
-    """Observe configured API only. Streaming/missing usage remains partial or unknown."""
-    if getattr(httpx.Client.send, "_agent_review_observer", False):
-        return
-    send, async_send = httpx.Client.send, httpx.AsyncClient.send
-    read, async_read = httpx.Response.read, httpx.Response.aread
-
-    def prepare(request):
-        recorder = CURRENT.get()
-        if recorder is None:
-            return None
-        actual, configured = urlsplit(str(request.url)), urlsplit(recorder.config["api_url"])
-        prefix = configured.path.rstrip("/").removesuffix("/chat/completions").removesuffix("/responses")
-        if actual.scheme != configured.scheme or actual.netloc != configured.netloc or actual.path not in {prefix + "/chat/completions", prefix + "/responses"}:
-            return None
-        event, started = (None, time.monotonic()) if EXPLICIT_MODEL.get() else recorder.begin("llm", recorder.config["model"])
-        remaining = recorder.remaining()
+    def prepare_http(self, request):
+        remaining = self.remaining()
         request.extensions["timeout"] = {k: remaining for k in ("connect", "read", "write", "pool")}
-        # Apply the remaining output budget to actual supported model requests.
-        maximum = recorder.request["budget"].get("max_output_tokens")
+        maximum = self.request["budget"].get("max_output_tokens")
         if maximum:
-            used = sum(e.get("usage", {}).get("tokens", {}).get("output", 0) for e in recorder.events)
+            used = sum(e.get("usage", {}).get("tokens", {}).get("output", 0) for e in self.events)
             available = int(maximum) - used
             if available <= 0:
-                if event is not None:
-                    recorder.finish(event, started, error=True)
                 raise RuntimeError("output budget exhausted")
             try:
                 body = json.loads(request.content)
                 parameter = next((k for k in ("max_completion_tokens", "max_output_tokens", "max_tokens") if k in body),
-                                 "max_output_tokens" if actual.path.endswith("/responses") else "max_tokens")
+                                 "max_output_tokens" if urlsplit(str(request.url)).path.endswith("/responses") else "max_tokens")
                 existing = body.get(parameter)
                 body[parameter] = min(existing, available) if type(existing) is int and existing > 0 else available
                 encoded = json.dumps(body).encode()
@@ -179,61 +113,6 @@ def instrument_httpx():
                 request.headers["content-length"] = str(len(encoded))
             except (ValueError, TypeError, httpx.RequestNotRead):
                 pass
-        return recorder, event, started
-
-    def finish_response(response):
-        pending = response.extensions.pop("agent_review_pending", None)
-        if pending:
-            recorder, event, started = pending
-            if event is None:
-                return
-            try:
-                payload = response.json()
-            except (ValueError, httpx.ResponseNotRead):
-                payload = None
-            recorder.finish(event, started, payload, error=not response.is_success)
-
-    def wrapped_send(self, request, **kwargs):
-        pending = prepare(request)
-        try:
-            response = send(self, request, **kwargs)
-        except Exception:
-            if pending and pending[1] is not None:
-                pending[0].finish(pending[1], pending[2], error=True)
-            raise
-        if pending:
-            response.extensions["agent_review_pending"] = pending
-            if response.is_stream_consumed:
-                finish_response(response)
-        return response
-
-    async def wrapped_async_send(self, request, **kwargs):
-        pending = prepare(request)
-        try:
-            response = await async_send(self, request, **kwargs)
-        except Exception:
-            if pending and pending[1] is not None:
-                pending[0].finish(pending[1], pending[2], error=True)
-            raise
-        if pending:
-            response.extensions["agent_review_pending"] = pending
-            if response.is_stream_consumed:
-                finish_response(response)
-        return response
-
-    def wrapped_read(self):
-        value = read(self)
-        finish_response(self)
-        return value
-
-    async def wrapped_async_read(self):
-        value = await async_read(self)
-        finish_response(self)
-        return value
-
-    wrapped_send._agent_review_observer = True
-    httpx.Client.send, httpx.AsyncClient.send = wrapped_send, wrapped_async_send
-    httpx.Response.read, httpx.Response.aread = wrapped_read, wrapped_async_read
 
 
 def create_app(bridge, entry, source_root, config, service_token, startup_error=None):
@@ -263,10 +142,10 @@ def create_app(bridge, entry, source_root, config, service_token, startup_error=
                 "adapter": "generated-python-v1", "native_entry": entry,
                 "bridge_ready": startup_error is None,
                 "limitations": ["Observed entry is target-reported, not attestation.",
-                                "httpx nonstreaming configured API and explicitly wrapped calls only; coverage partial."]}
+                                "Configured httpx JSON/SSE API and explicitly wrapped calls only; coverage partial."]}
 
     @app.post("/task")
-    def task(body: TaskRequest):
+    def task(body: TaskRequest, incoming: Request):
         request = body.model_dump()
         try:
             deadline = float(body.budget.get("deadline_seconds", 60))
@@ -275,7 +154,9 @@ def create_app(bridge, entry, source_root, config, service_token, startup_error=
                 raise ValueError()
         except (ValueError, TypeError):
             raise HTTPException(status_code=422, detail="invalid budget") from None
-        recorder = Recorder(request, config)
+        recorder = Recorder(request, config, context={
+            key: incoming.headers[header][:200] for key, header in CONTEXT_HEADERS.items() if header in incoming.headers
+        })
         observed = False
         failure = None
         def profile(frame, event, arg):

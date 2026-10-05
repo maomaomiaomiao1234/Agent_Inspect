@@ -66,7 +66,9 @@ def serve(host="127.0.0.1", port=9081):
                 body["usage_mode"] = "offline" if self.path == "/token-offline" else "model"
                 if self.path != "/token-offline":
                     events = [{"id": f"model-{i}", "kind": "llm", "model": "synthetic-ui-fixture",
-                               "status": "completed", "usage": {"tokens": {"input": 10, "output": 5, "total": 15}}}
+                               "status": "completed", "usage": {"tokens": {"input": 10, "output": 5, "total": 15,
+                                   "reasoning": 2, "cache_read": 6, "cache_miss": 4}},
+                               "context": {"provider_request_id": f"synthetic-request-{i}", "usage_complete": True}}
                               for i in range(2)]
                     if self.path == "/token-partial":
                         events[-1] = {"id": "model-1", "kind": "llm", "model": "synthetic-ui-fixture", "status": "error"}

@@ -60,6 +60,11 @@ with tempfile.TemporaryDirectory(prefix="agent-review-wheel-") as temporary:
 
     assert b"class AgentTarget" in smolagents_adapter()
     assert b"class CallRecorder" in smolagents_telemetry()
+    from agent_trace_review.provider_telemetry import ModelRecorder, normalize_usage
+    from agent_trace_review.repository_templates.auto_runtime import Recorder
+
+    assert issubclass(Recorder, ModelRecorder)
+    assert normalize_usage({"usage": {"prompt_tokens": 10, "completion_tokens": 5}})["tokens"]["total"] == 15
     assert "TargetTrace" in client.get("/api/schema").json()["target_response"]["$defs"]
     generated = client.post("/api/assessment-suites/generate", headers={"X-Review-Request": "1"},
                             json={"template": "smolagents", "cases": 7, "seed": 81})

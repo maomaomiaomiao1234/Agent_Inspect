@@ -124,6 +124,8 @@ def test_stage_is_evaluator_owned_preserves_native_source_and_no_secrets(root, t
     assert plan["native_entry"]["source_hash"] == digest(NATIVE.encode())
     assert b"build-must-not-see" not in b"".join(p.read_bytes() for p in context.rglob("*") if p.is_file())
     assert "USER 65534:65534" in (context / "Dockerfile").read_text()
+    assert plan["telemetry_hash"] == digest((context / "provider_telemetry.py").read_bytes())
+    assert "provider_telemetry.py" in (context / "Dockerfile").read_text()
 
 
 def test_generator_structured_output_usage_and_secret_scrubbing(root):

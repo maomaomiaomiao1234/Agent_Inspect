@@ -212,7 +212,8 @@ def test_complete_calls_fill_missing_aggregate_fields_and_cost():
         if event["kind"] == "llm":
             event["usage"]["cost_usd"] = 0.001
     parsed = TargetResponse.model_validate(body)
-    assert parsed.usage.tokens.model_dump() == {"input": 30, "output": 10, "total": 40, "reasoning": None}
+    assert parsed.usage.tokens.model_dump() == {"input": 30, "output": 10, "total": 40, "reasoning": None,
+                                               "cache_read": None, "cache_write": None, "cache_miss": None}
     assert parsed.usage.cost_usd == 0.002
     assert parsed._aggregate_fields == {"input_tokens"}
 

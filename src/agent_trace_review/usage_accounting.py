@@ -4,7 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-KEYS = ("input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cost_usd")
+BASE_KEYS = ("input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cost_usd")
+KEYS = (*BASE_KEYS, "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens")
 
 
 class UsageField(BaseModel):
@@ -24,11 +25,12 @@ class UsageField(BaseModel):
 class UsageSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
     provenance: Literal["target_reported", "exporter_reported"] = "target_reported"
-    fields: dict[Literal["input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cost_usd"], UsageField]
+    fields: dict[Literal["input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cost_usd",
+                         "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens"], UsageField]
 
     @model_validator(mode="after")
     def all_fields(self):
-        if set(self.fields) != set(KEYS):
+        if not set(BASE_KEYS).issubset(self.fields):
             raise ValueError("用量摘要需要逐字段声明完整性。")
         for key, field in self.fields.items():
             if key != "cost_usd" and field.value is not None and not isinstance(field.value, int):
@@ -70,12 +72,16 @@ def turn_usage(turn):
         if aggregate is not None:
             fields[key] = _field(aggregate, "complete", "aggregate", "目标上报的本轮汇总；不与逐次调用重复相加。")
         elif known:
-            complete = trace.get("coverage") == "complete" and len(known) == len(calls)
+            complete = trace.get("coverage") == "complete" and len(known) == len(calls) and all(
+                e.get("context", {}).get("usage_complete") is not False for e in calls)
             fields[key] = _field(round(sum(known), 8) if key == "cost_usd" else sum(known),
                                  "complete" if complete else "partial", "calls",
                                  "完整逐次调用用量。" if complete else "部分调用或字段未采集，仅表示已观测下界。")
         else:
-            reason = ("已记录模型调用但未上报此字段；无法区分供应商缺失与适配器漏采。" if calls else
+            reasons = sorted({e.get("context", {}).get("usage_missing_reason") for e in calls
+                              if isinstance(e.get("context", {}).get("usage_missing_reason"), str)})
+            reason = ("采集器报告：" + "、".join(reasons) if reasons else
+                      "已记录模型调用但未上报此字段；无法区分供应商缺失与适配器漏采。" if calls else
                       "目标未上报此字段；需在模型调用处采集 usage。")
             fields[key] = _field(None, "unknown", "none", reason)
     return {"provenance": "target_reported", "fields": fields}
@@ -85,7 +91,8 @@ def combine_usage(summaries, *, complete=True, expected=None):
     fields = {}
     missing = expected is not None and len(summaries) != expected
     for key in KEYS:
-        items = [s["fields"][key] for s in summaries]
+        items = [s["fields"].get(key, _field(None, "unknown", "none", "历史记录未保存此细分字段。"))
+                 for s in summaries]
         applicable = [f for f in items if f["status"] != "not_applicable"]
         known = [f["value"] for f in applicable if f["value"] is not None]
         if items and not applicable and complete and not missing:
