@@ -1,0 +1,1091 @@
+{
+  "meta": {
+    "title": "Agent Inspect · 评测与轨迹评审 Live Panel",
+    "lang": "zh-CN"
+  },
+  "canvas": {
+    "width": 1440,
+    "height": 1080,
+    "duration": 18,
+    "fps": 20,
+    "preroll": 0
+  },
+  "theme": {
+    "preset": "terminal-dark",
+    "font": "\"SFMono-Regular\",\"Menlo\",\"Consolas\",\"PingFang SC\",\"Microsoft YaHei\",monospace",
+    "fontSize": 21,
+    "lineHeight": 32,
+    "boxMode": "solid",
+    "radius": 5,
+    "borderWidth": 1.5,
+    "packetSize": 8,
+    "glow": true,
+    "colors": {
+      "bg": "#10151d",
+      "bar": "#1c2330",
+      "surface": "#151c26",
+      "line": "#46536b",
+      "line2": "#46536b",
+      "fg": "#e0e7f1",
+      "dim": "#99a7bc",
+      "cy": "#78dce4",
+      "bl": "#99baff",
+      "gr": "#8ddeae",
+      "pu": "#c0a9f5",
+      "ye": "#f1c487",
+      "inputBorder": "#43717a",
+      "inputActive": "#192b34"
+    }
+  },
+  "clock": {
+    "start": "00:00:12",
+    "rate": 1
+  },
+  "titlebar": {
+    "text": "~/Agent_Inspect — evidence-backed agent evaluation",
+    "height": 38,
+    "size": 16
+  },
+  "credit": {
+    "text": "流程依据项目源码与指南 · 12 类 / 7 维来自通用模板 · 动画状态与计数为示意 · live-panel: ythx-101 / motion: @thedelost",
+    "y": 1066,
+    "size": 14
+  },
+  "machines": {
+    "ingress": {
+      "type": "triggers",
+      "color": "cy",
+      "hl": "hl",
+      "period": 6,
+      "on": 4.5,
+      "t0": 0,
+      "cps": 16,
+      "onText": "接入中",
+      "offText": "等待下一入口",
+      "items": [
+        {
+          "name": "主动评测",
+          "adv": [
+            "冻结题集与验收规则",
+            "按预算与重复次数执行"
+          ],
+          "mode": "Suite / Profile"
+        },
+        {
+          "name": "仓库接入",
+          "adv": [
+            "固定 Git 提交",
+            "构建、接入检查与资源回收"
+          ],
+          "mode": "GitHub / Docker"
+        },
+        {
+          "name": "轨迹导入",
+          "adv": [
+            "读取已有运行材料",
+            "核对产物、工具与验证证据"
+          ],
+          "mode": "OpenCode / Trace"
+        }
+      ],
+      "log": {
+        "who": "input",
+        "c": "cy",
+        "start": {
+          "m": "示意入口：{name}",
+          "g": "{mode}"
+        },
+        "end": {
+          "m": "示意输入材料已接收",
+          "g": "保留输入与来源"
+        }
+      }
+    },
+    "dispatch": {
+      "type": "lane",
+      "period": 6,
+      "run": 4.2,
+      "off": 0,
+      "busy": "分配任务与预算",
+      "done": [
+        "任务批次已登记"
+      ],
+      "busyColor": "bl",
+      "doneColor": "gr",
+      "log": {
+        "who": "queue",
+        "c": "bl",
+        "msgs": [
+          [
+            "示意任务批次已登记",
+            "case × budget × attempt"
+          ]
+        ]
+      }
+    },
+    "agent": {
+      "type": "lane",
+      "period": 6,
+      "run": 3.5,
+      "off": 0.6,
+      "phase": 1,
+      "busy": "执行任务 / 调用工具",
+      "done": [
+        "返回 output 与轨迹"
+      ],
+      "busyColor": "bl",
+      "doneColor": "gr",
+      "log": {
+        "who": "target",
+        "c": "bl",
+        "msgs": [
+          [
+            "示意目标返回运行材料",
+            "output + trace + usage"
+          ]
+        ]
+      }
+    },
+    "verdict": {
+      "type": "cycle",
+      "period": 6,
+      "t0": 0,
+      "values": [
+        {
+          "t": "PASS · 已通过",
+          "evidence": "输出满足固定规则",
+          "m": "示意验收：pass",
+          "g": "已确认的结果证据"
+        },
+        {
+          "t": "FAIL · 未通过",
+          "evidence": "输出违反固定规则",
+          "m": "示意验收：fail",
+          "g": "定位不匹配的检查项"
+        },
+        {
+          "t": "UNKNOWN · 待补证据",
+          "evidence": "验证材料不足",
+          "m": "示意验收：unknown",
+          "g": "保留未知，不计为通过"
+        }
+      ],
+      "log": {
+        "who": "verify",
+        "c": "gr"
+      }
+    },
+    "saved": {
+      "type": "lane",
+      "period": 6,
+      "run": 3,
+      "off": 1.2,
+      "phase": 2,
+      "busy": "保存证据与验收快照",
+      "done": [
+        "快照已保存"
+      ],
+      "busyColor": "pu",
+      "doneColor": "gr",
+      "log": {
+        "who": "store",
+        "c": "pu",
+        "msgs": [
+          [
+            "示意证据快照已保存",
+            "SQLite / 内容寻址工件"
+          ]
+        ]
+      }
+    }
+  },
+  "elements": [
+    {
+      "type": "text",
+      "x": 40,
+      "y": 88,
+      "size": 40,
+      "b": 1,
+      "c": "wh",
+      "ls": 1,
+      "t": "AGENT INSPECT"
+    },
+    {
+      "type": "text",
+      "x": 42,
+      "y": 137,
+      "size": 25,
+      "c": "fg",
+      "t": "让 Agent 能力评测有据可查"
+    },
+    {
+      "type": "text",
+      "x": 1090,
+      "y": 85,
+      "size": 20,
+      "c": "cy",
+      "t": "LIVE PANEL / v0.3.0"
+    },
+    {
+      "type": "text",
+      "x": 1090,
+      "y": 120,
+      "size": 20,
+      "c": "dim",
+      "t": "流程示意 · 非实时监控"
+    },
+    {
+      "type": "rule",
+      "x": 40,
+      "y": 176,
+      "w": 1360
+    },
+    {
+      "type": "text",
+      "x": 40,
+      "y": 211,
+      "runs": [
+        {
+          "sw": "cy"
+        },
+        {
+          "t": "任务与来源",
+          "c": "dim"
+        },
+        {
+          "t": "     "
+        },
+        {
+          "sw": "bl"
+        },
+        {
+          "t": "编排与执行",
+          "c": "dim"
+        },
+        {
+          "t": "     "
+        },
+        {
+          "sw": "gr"
+        },
+        {
+          "t": "独立验收",
+          "c": "dim"
+        },
+        {
+          "t": "     "
+        },
+        {
+          "sw": "pu"
+        },
+        {
+          "t": "报告与证据",
+          "c": "dim"
+        }
+      ],
+      "size": 20
+    },
+    {
+      "type": "path",
+      "points": [
+        [
+          330,
+          324
+        ],
+        [
+          390,
+          324
+        ]
+      ],
+      "color": "line",
+      "width": 2,
+      "r": 8,
+      "head": 8,
+      "flow": {
+        "period": 1.5,
+        "offsets": [
+          0
+        ],
+        "color": "cy",
+        "tail": 13,
+        "when": {
+          "var": "ingress.active",
+          "eq": 0
+        }
+      },
+      "when": {
+        "var": "ingress.active",
+        "eq": 0
+      },
+      "then": {
+        "color": "cy",
+        "width": 2.5
+      }
+    },
+    {
+      "type": "path",
+      "points": [
+        [
+          330,
+          499
+        ],
+        [
+          360,
+          499
+        ],
+        [
+          360,
+          452
+        ],
+        [
+          390,
+          452
+        ]
+      ],
+      "color": "line",
+      "width": 2,
+      "r": 8,
+      "head": 8,
+      "flow": {
+        "period": 2,
+        "offsets": [
+          0.4
+        ],
+        "color": "cy",
+        "tail": 13,
+        "when": {
+          "var": "ingress.active",
+          "eq": 1
+        }
+      },
+      "when": {
+        "var": "ingress.active",
+        "eq": 1
+      },
+      "then": {
+        "color": "cy",
+        "width": 2.5
+      }
+    },
+    {
+      "type": "path",
+      "points": [
+        [
+          330,
+          679
+        ],
+        [
+          354,
+          679
+        ],
+        [
+          354,
+          791
+        ],
+        [
+          900,
+          791
+        ],
+        [
+          900,
+          752
+        ]
+      ],
+      "color": "line",
+      "width": 2,
+      "r": 8,
+      "head": 8,
+      "flow": {
+        "period": 2.5,
+        "offsets": [
+          0.6
+        ],
+        "color": "cy",
+        "tail": 13,
+        "when": {
+          "var": "ingress.active",
+          "eq": 2
+        }
+      },
+      "dash": true,
+      "when": {
+        "var": "ingress.active",
+        "eq": 2
+      },
+      "then": {
+        "color": "cy",
+        "width": 2.5
+      }
+    },
+    {
+      "type": "path",
+      "points": [
+        [
+          540,
+          506
+        ],
+        [
+          540,
+          585
+        ]
+      ],
+      "color": "line",
+      "width": 2,
+      "r": 8,
+      "head": 8,
+      "flow": {
+        "period": 1.5,
+        "offsets": [
+          0.1
+        ],
+        "color": "bl",
+        "tail": 13
+      }
+    },
+    {
+      "type": "path",
+      "points": [
+        [
+          690,
+          324
+        ],
+        [
+          750,
+          324
+        ]
+      ],
+      "color": "line",
+      "width": 2,
+      "r": 8,
+      "head": 8,
+      "flow": {
+        "period": 2,
+        "offsets": [
+          0.6
+        ],
+        "color": "gr",
+        "tail": 13
+      }
+    },
+    {
+      "type": "path",
+      "points": [
+        [
+          690,
+          663
+        ],
+        [
+          750,
+          663
+        ]
+      ],
+      "color": "line",
+      "width": 2,
+      "r": 8,
+      "head": 8,
+      "flow": {
+        "period": 1.5,
+        "offsets": [
+          0.5
+        ],
+        "color": "bl",
+        "tail": 13
+      }
+    },
+    {
+      "type": "path",
+      "points": [
+        [
+          1050,
+          340
+        ],
+        [
+          1110,
+          340
+        ]
+      ],
+      "color": "line",
+      "width": 2,
+      "r": 8,
+      "head": 8,
+      "flow": {
+        "period": 2,
+        "offsets": [
+          0.3
+        ],
+        "color": "gr",
+        "tail": 13
+      }
+    },
+    {
+      "type": "path",
+      "points": [
+        [
+          1050,
+          663
+        ],
+        [
+          1110,
+          663
+        ]
+      ],
+      "color": "line",
+      "width": 2,
+      "r": 8,
+      "head": 8,
+      "flow": {
+        "period": 1.5,
+        "offsets": [
+          0.8
+        ],
+        "color": "pu",
+        "tail": 13
+      }
+    },
+    {
+      "type": "path",
+      "points": [
+        [
+          1255,
+          585
+        ],
+        [
+          1255,
+          506
+        ]
+      ],
+      "color": "line",
+      "width": 2,
+      "r": 8,
+      "head": 8,
+      "flow": {
+        "period": 2,
+        "offsets": [
+          0.8
+        ],
+        "color": "pu",
+        "tail": 13
+      }
+    },
+    {
+      "type": "box",
+      "x": 40,
+      "y": 250,
+      "w": 290,
+      "h": 150,
+      "color": "inputBorder",
+      "fill": "surface",
+      "pad": [
+        15,
+        18,
+        18
+      ],
+      "align": "left",
+      "lines": [
+        {
+          "t": "01 / 主动评测",
+          "c": "cy",
+          "size": 22,
+          "b": 1
+        },
+        {
+          "t": "Suite + Profile",
+          "c": "cy",
+          "size": 20
+        },
+        {
+          "t": "12 类任务 · 7 个维度",
+          "c": "dim",
+          "size": 20
+        },
+        {
+          "t": "独立题集与验收标准",
+          "c": "dim",
+          "size": 20
+        }
+      ],
+      "when": {
+        "var": "ingress.active",
+        "eq": 0
+      },
+      "then": {
+        "color": "cy",
+        "fill": "inputActive"
+      }
+    },
+    {
+      "type": "box",
+      "x": 40,
+      "y": 425,
+      "w": 290,
+      "h": 150,
+      "color": "inputBorder",
+      "fill": "surface",
+      "pad": [
+        15,
+        18,
+        18
+      ],
+      "align": "left",
+      "lines": [
+        {
+          "t": "01 / 仓库接入",
+          "c": "cy",
+          "size": 22,
+          "b": 1
+        },
+        {
+          "t": "公开 GitHub · 固定提交",
+          "c": "cy",
+          "size": 20
+        },
+        {
+          "t": "Docker 构建 / 自动适配",
+          "c": "dim",
+          "size": 20
+        },
+        {
+          "t": "源码线索关联到案例",
+          "c": "dim",
+          "size": 20
+        }
+      ],
+      "when": {
+        "var": "ingress.active",
+        "eq": 1
+      },
+      "then": {
+        "color": "cy",
+        "fill": "inputActive"
+      }
+    },
+    {
+      "type": "box",
+      "x": 40,
+      "y": 605,
+      "w": 290,
+      "h": 150,
+      "color": "inputBorder",
+      "fill": "surface",
+      "pad": [
+        15,
+        18,
+        18
+      ],
+      "align": "left",
+      "lines": [
+        {
+          "t": "01 / 轨迹导入",
+          "c": "cy",
+          "size": 22,
+          "b": 1
+        },
+        {
+          "t": "OpenCode / Trace JSON",
+          "c": "cy",
+          "size": 20
+        },
+        {
+          "t": "任务 / diff / 验证结果",
+          "c": "dim",
+          "size": 20
+        },
+        {
+          "t": "直接进入轨迹评审",
+          "c": "dim",
+          "size": 20
+        }
+      ],
+      "when": {
+        "var": "ingress.active",
+        "eq": 2
+      },
+      "then": {
+        "color": "cy",
+        "fill": "inputActive"
+      }
+    },
+    {
+      "type": "box",
+      "x": 390,
+      "y": 250,
+      "w": 300,
+      "h": 256,
+      "color": "bl",
+      "fill": "surface",
+      "pad": [
+        15,
+        18,
+        18
+      ],
+      "align": "left",
+      "lines": [
+        {
+          "t": "02 / 编排与调度",
+          "c": "bl",
+          "size": 22,
+          "b": 1
+        },
+        {
+          "t": "FastAPI · agent-review",
+          "c": "fg",
+          "size": 19
+        },
+        {
+          "t": "case × budget × attempt",
+          "c": "dim",
+          "size": 18
+        },
+        {
+          "t": "冻结题集 · 隔离 session",
+          "c": "dim",
+          "size": 19
+        },
+        {
+          "runs": [
+            {
+              "v": "dispatch"
+            }
+          ],
+          "size": 19
+        },
+        {
+          "t": "示意信号  {packets}",
+          "c": "bl",
+          "size": 19
+        },
+        {
+          "t": "Profile 仅供评审端使用",
+          "c": "dim",
+          "size": 18
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "x": 565,
+      "y": 545,
+      "size": 17,
+      "c": "dim",
+      "t": "任务 / 多轮请求"
+    },
+    {
+      "type": "box",
+      "x": 390,
+      "y": 585,
+      "w": 300,
+      "h": 170,
+      "color": "bl",
+      "fill": "surface",
+      "pad": [
+        15,
+        18,
+        18
+      ],
+      "align": "left",
+      "lines": [
+        {
+          "t": "03 / 被测 Agent",
+          "c": "bl",
+          "size": 22,
+          "b": 1
+        },
+        {
+          "t": "HTTP · target-v1",
+          "c": "fg",
+          "size": 20
+        },
+        {
+          "t": "output + trace + usage",
+          "c": "dim",
+          "size": 18
+        },
+        {
+          "runs": [
+            {
+              "v": "agent"
+            }
+          ],
+          "size": 19
+        }
+      ]
+    },
+    {
+      "type": "box",
+      "x": 750,
+      "y": 250,
+      "w": 300,
+      "h": 505,
+      "color": "gr",
+      "fill": "surface",
+      "pad": [
+        15,
+        18,
+        18
+      ],
+      "align": "left",
+      "lines": [
+        {
+          "t": "04 / 独立验收",
+          "c": "gr",
+          "size": 22,
+          "b": 1
+        },
+        {
+          "t": "Profile / 自定义评估器",
+          "c": "fg",
+          "size": 19
+        },
+        {
+          "t": "核对最终输出与产物",
+          "c": "dim",
+          "size": 20
+        },
+        {
+          "t": "自报完成需验证证据",
+          "c": "dim",
+          "size": 20
+        },
+        {
+          "t": "示例验收状态",
+          "c": "dim",
+          "size": 18
+        },
+        {
+          "size": 19,
+          "b": 1,
+          "c": "gr",
+          "runs": [
+            {
+              "v": "verdict",
+              "when": {
+                "var": "verdict.i",
+                "eq": 2
+              },
+              "then": {
+                "c": "pu"
+              }
+            }
+          ],
+          "when": {
+            "var": "verdict.i",
+            "eq": 1
+          },
+          "then": {
+            "c": "ye"
+          }
+        },
+        {
+          "runs": [
+            {
+              "v": "verdict.evidence"
+            }
+          ],
+          "size": 20,
+          "c": "dim"
+        },
+        "",
+        {
+          "t": "工具调用 / 任务约束",
+          "c": "fg",
+          "size": 20
+        },
+        {
+          "t": "代码修复 / 文档转换",
+          "c": "fg",
+          "size": 20
+        },
+        {
+          "t": "耗时 / Token / 预算",
+          "c": "fg",
+          "size": 20
+        },
+        "",
+        {
+          "t": "用量缺失保持 unknown",
+          "c": "ye",
+          "size": 19
+        },
+        {
+          "t": "未知结果不计为通过",
+          "c": "dim",
+          "size": 19
+        }
+      ]
+    },
+    {
+      "type": "box",
+      "x": 1110,
+      "y": 250,
+      "w": 290,
+      "h": 256,
+      "color": "pu",
+      "fill": "surface",
+      "pad": [
+        15,
+        18,
+        18
+      ],
+      "align": "left",
+      "lines": [
+        {
+          "t": "05 / 证据报告",
+          "c": "pu",
+          "size": 22,
+          "b": 1
+        },
+        {
+          "t": "React · TypeScript",
+          "c": "fg",
+          "size": 20
+        },
+        {
+          "t": "评分 / 能力 / 预算",
+          "c": "dim",
+          "size": 20
+        },
+        {
+          "t": "逐案例证据与来源",
+          "c": "dim",
+          "size": 20
+        },
+        {
+          "t": "同题集版本比较",
+          "c": "dim",
+          "size": 20
+        },
+        {
+          "t": "Markdown / JSON",
+          "c": "pu",
+          "size": 20
+        },
+        {
+          "t": "Bundle 证据包",
+          "c": "pu",
+          "size": 20
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "x": 1277,
+      "y": 545,
+      "size": 17,
+      "c": "dim",
+      "t": "读取"
+    },
+    {
+      "type": "box",
+      "x": 1110,
+      "y": 585,
+      "w": 290,
+      "h": 170,
+      "color": "pu",
+      "fill": "surface",
+      "pad": [
+        15,
+        18,
+        18
+      ],
+      "align": "left",
+      "lines": [
+        {
+          "t": "EVIDENCE STORE",
+          "c": "pu",
+          "size": 22,
+          "b": 1
+        },
+        {
+          "t": "SQLite + 内容寻址工件",
+          "c": "fg",
+          "size": 19
+        },
+        {
+          "t": "题集 / 提交 / 验收快照",
+          "c": "dim",
+          "size": 19
+        },
+        {
+          "runs": [
+            {
+              "v": "saved"
+            }
+          ],
+          "size": 18
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "x": 575,
+      "y": 816,
+      "size": 18,
+      "c": "dim",
+      "t": "已有运行记录 → 轨迹评审与独立验证"
+    },
+    {
+      "type": "log",
+      "x": 40,
+      "y": 855,
+      "w": 1360,
+      "rows": 4,
+      "padTop": 16,
+      "padBottom": 24,
+      "padLeft": 20,
+      "title": "simulated event log",
+      "titleX": 28,
+      "titleW": 310,
+      "cols": [
+        {
+          "key": "time",
+          "x": 0
+        },
+        {
+          "key": "who",
+          "x": 142
+        },
+        {
+          "key": "m",
+          "x": 290
+        },
+        {
+          "key": "g",
+          "x": 830
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "x": 40,
+      "y": 1032,
+      "runs": [
+        {
+          "t": "$ ",
+          "c": "gr"
+        },
+        {
+          "t": "{ingress.name}  ",
+          "c": "cy",
+          "b": 1
+        },
+        {
+          "t": "{ingress.adv0}",
+          "c": "fg"
+        },
+        {
+          "cursor": true,
+          "c": "cy"
+        }
+      ],
+      "size": 19
+    },
+    {
+      "type": "text",
+      "x": 1130,
+      "y": 1032,
+      "size": 19,
+      "c": "bl",
+      "t": "示意信号 {packets}"
+    }
+  ]
+}

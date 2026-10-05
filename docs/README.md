@@ -10,6 +10,7 @@
 | --- | --- |
 | 安装并启动网页 | [项目 README](../README.md#安装与启动) |
 | 理解 Agent 能力与评分 | [通用评测](guides/GENERAL_ASSESSMENT.zh-CN.md)、[可视化与评分](guides/ASSESSMENT_VISUALIZATION.zh-CN.md) |
+| 查看动态处理流程、修改 README 动画 | [Live Panel 配置与生成说明](live-panel/README.md) |
 | 无密钥跑通第一次评测 | [控制 Agent 示例](examples/assessment/README.md) |
 | 评测公开 GitHub 仓库 | [仓库评测](guides/REPOSITORY_ASSESSMENT.zh-CN.md)、[Python 自动适配](guides/AUTO_ADAPTATION.zh-CN.md) |
 | 接入已有 Agent 服务 | [主动评测与 target-v1 协议](guides/ACTIVE_ASSESSMENT.zh-CN.md) |
@@ -24,7 +25,8 @@
 - `planning/`、`reviews/`：设计计划、交接与历史评审；当前实现以项目 README、指南及代码为准。
 - `archive/`：整理前的完整 README，保留进阶导入、专项验证、导出和常见问题说明。
 - `reference-assets/`：有固定路径要求的 Markdown 副本，原件仍供运行、打包或证据核对使用。
-- `images/`：真实页面截图，供项目 README 展示。
+- `images/`：真实页面截图与 Live Panel 动画，供项目 README 展示。
+- `live-panel/`：动态架构图的 JSON 配置、独立 HTML 和生成说明。
 
 说明页中的项目命令通常在仓库根目录执行。模板中 `trace.json`、`profile.json` 等文件名指模板资源或 `init-task` 生成的目录，移动说明页不会移动这些运行数据。
 

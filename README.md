@@ -4,6 +4,7 @@ Agent Inspect（Python 包名 `agent-trace-review`，当前版本 `0.3.0`）用�
 
 项目采用 Python / FastAPI 后端、React / TypeScript 前端和 SQLite 本地存储，提供网页与 `agent-review` 命令行两种入口。
 
+- [Live Panel](#live-panel)
 - [运行截图](#运行截图)
 - [项目处理哪些任务](#项目处理哪些任务)
 - [启动所需条件](#启动所需条件)
@@ -11,6 +12,16 @@ Agent Inspect（Python 包名 `agent-trace-review`，当前版本 `0.3.0`）用�
 - [跑通第一个评测](#跑通第一个评测)
 - [评测真实 Agent](#评测真实-agent)
 - [开发、目录与文档](#开发目录与文档)
+
+## Live Panel
+
+![Agent Inspect 动态流程图：主动评测、仓库接入与轨迹导入，经编排、Agent 执行和独立验收，生成证据报告](docs/images/agent-inspect-live-panel.gif)
+
+三种输入进入同一套证据评审流程：主动任务与仓库接入经过评测编排，已有轨迹直接进入评审；独立验收保留 `pass / fail / unknown`，最终生成能力、预算与逐案例证据报告。
+
+**画面为流程示意，动画状态、日志与计数不代表真实评测数据。** [静态图](docs/images/agent-inspect-live-panel.png) · [下载 MP4](docs/images/agent-inspect-live-panel.mp4) · [HTML 动画页（下载后打开）](docs/live-panel/index.html) · [配置与生成说明](docs/live-panel/README.md)
+
+基于 [live-panel-skill](https://github.com/ythx-101/live-panel-skill) 定制，动态表现参考 [@thedelost](https://x.com/thedelost/status/2105398038026195279) 的面板创意。
 
 ## 运行截图
 
@@ -227,7 +238,8 @@ Agent_Inspect/
 │   ├── reviews/               # 历史代码评审
 │   ├── archive/               # 整理前的完整 README
 │   ├── reference-assets/      # 运行时、Skill、历史证据的文档副本
-│   └── images/                # README 运行截图
+│   ├── images/                # README 运行截图与 Live Panel 动画
+│   └── live-panel/            # 动画配置、独立 HTML 与生成说明
 ├── src/agent_trace_review/    # 后端、CLI、评估器与包内资源
 ├── web/                       # React 前端与端到端测试
 ├── examples/                  # 可运行 Agent、题集、模板与历史证据
