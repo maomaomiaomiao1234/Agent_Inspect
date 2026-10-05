@@ -85,14 +85,7 @@ export function Benchmarks({ runs, onRefresh, onError }: BenchmarksProps) {
     <div className="benchmarks-page">
       <div className="page-heading">
         <div>
-          <div className="eyebrow">
-            <Boxes size={14} /> BENCHMARK EVALUATION
-          </div>
           <h1>专项基准评估</h1>
-          <p>
-            在确定性与受控隔离环境下，评测 Agent
-            的代码缺陷修复能力与多模态文档结构化提取能力。
-          </p>
         </div>
       </div>
 
@@ -105,11 +98,6 @@ export function Benchmarks({ runs, onRefresh, onError }: BenchmarksProps) {
             </span>
             <h2>代码修复基准 · Docker 隔离测试</h2>
           </div>
-          <p className="benchmark-card-desc">
-            在无网络、只读的轻量 Docker 容器 (<code>python:3.12-slim</code>)
-            中真实执行 pytest 独立测试，严格对照 baseline 与 final
-            状态，验证边界修复是否正确、是否引入代码回归。
-          </p>
 
           <div className="benchmark-scenarios">
             <h3>选择候选场景一键评测</h3>
@@ -177,9 +165,6 @@ export function Benchmarks({ runs, onRefresh, onError }: BenchmarksProps) {
               />
               <span>优先离线预置包（无需本地运行 Docker daemon）</span>
             </label>
-            <p className="scenario-note">
-              默认优先调用本地 Docker 运行真实 pytest；当检测不到 Docker 时将自动平滑降级加载带真实执行记录的预置包。
-            </p>
           </div>
         </section>
 
@@ -191,11 +176,6 @@ export function Benchmarks({ runs, onRefresh, onError }: BenchmarksProps) {
             </span>
             <h2>文档转换基准 · PDF 提取与结构化验收</h2>
           </div>
-          <p className="benchmark-card-desc">
-            基于包含图文和矩形表格的两页数字 PDF，对照独立标准快照检查 7
-            项确定性指标：正文段落、标题结构、阅读顺序、表格单元格及
-            Markdown/JSON 一致性。
-          </p>
 
           <div className="benchmark-scenarios">
             <h3>选择候选场景一键评测</h3>
@@ -266,10 +246,6 @@ export function Benchmarks({ runs, onRefresh, onError }: BenchmarksProps) {
               </button>
             </div>
           </div>
-
-          <p className="scenario-note">
-            源 PDF 为自制标准化测试文件，评估器在本地实际运行。详情页可阅读 Markdown、展开结构化 JSON、下载源 PDF 并核对各项独立验收报告。
-          </p>
         </section>
       </div>
 
@@ -280,15 +256,12 @@ export function Benchmarks({ runs, onRefresh, onError }: BenchmarksProps) {
             <h2>基准评测历史记录</h2>
             <span className="count">{benchmarkRuns.length}</span>
           </div>
-          <span className="scenario-note">
-            包含代码修复与 PDF 文档转换的所有评估记录
-          </span>
         </div>
 
         {benchmarkRuns.length === 0 ? (
           <div className="empty-runs-hint">
             <History size={24} />
-            <p>暂无基准评估记录，请点击上方候选场景快速发起体验。</p>
+            <p>暂无基准评估记录</p>
           </div>
         ) : (
           <div className="assessment-table">

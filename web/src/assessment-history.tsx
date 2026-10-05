@@ -22,7 +22,7 @@ export function AssessmentHistory({ jobs, selected, loading, onOpen, onRefresh }
   const pageSize = 8, pages = Math.max(1, Math.ceil(filtered.length / pageSize)), current = Math.min(page, pages - 1);
   const visible = filtered.slice(current * pageSize, (current + 1) * pageSize);
   return <section className="standalone-panel assessment-history" aria-label="评测任务">
-    <div className="history-heading"><div><h2>评测任务 <span className="count">{jobs.length}</span></h2><p>选择一份报告，查看评分、能力维度与验收证据。</p></div>
+    <div className="history-heading"><div><h2>评测任务 <span className="count">{jobs.length}</span></h2></div>
       <button onClick={onRefresh}><RefreshCw size={14} />刷新评测</button></div>
     <div className="history-controls"><label className="search"><Search size={16} /><input type="search" aria-label="搜索评测" placeholder="搜索 Agent、题集或任务…" value={search}
       onChange={e => { setSearch(e.target.value); setPage(0); }} /></label>
@@ -46,7 +46,7 @@ export function AssessmentHistory({ jobs, selected, loading, onOpen, onRefresh }
             <td><span className="history-progress-text">{j.completed}/{j.planned}</span><progress value={j.completed} max={j.planned || 1} aria-label={`${j.target_id} 案例进度`} /></td>
             <td><button className="icon-button" aria-label={`查看评测 ${j.id}`} onClick={() => onOpen(j.id)}><ArrowRight size={17} /></button></td>
           </tr>; })}</tbody></table></div>}
-    {!!filtered.length && <div className="history-footer"><span>显示 {current * pageSize + 1}–{Math.min((current + 1) * pageSize, filtered.length)} / {filtered.length} 条 · 最近最多 100 条记录</span>
+    {!!filtered.length && <div className="history-footer"><span>{current * pageSize + 1}–{Math.min((current + 1) * pageSize, filtered.length)} / {filtered.length} 条</span>
       {pages > 1 && <div><button aria-label="上一页评测" disabled={current === 0} onClick={() => setPage(current - 1)}><ChevronLeft size={14} /></button>
         <span>{current + 1} / {pages}</span><button aria-label="下一页评测" disabled={current === pages - 1} onClick={() => setPage(current + 1)}><ChevronRight size={14} /></button></div>}</div>}
   </section>;

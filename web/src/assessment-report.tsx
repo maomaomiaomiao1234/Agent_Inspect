@@ -59,7 +59,6 @@ export function ResultReview({ results, focus, onClearFocus }: { results: Assess
   });
   return <section ref={section} tabIndex={-1} className="assessment-review" aria-label="案例诊断">
     <h3>案例诊断</h3>
-    <p>先处理未通过与证据不足的案例。每个结论都可以追溯到对话和验收记录。</p>
     {focus && <div className="case-focus"><span>正在查看：{categoryLabels[focus.category] || focus.category}{focus.budget ? ` · ${focus.budget}` : " · 全部预算"}</span>
       <button onClick={onClearFocus}>清除维度筛选</button></div>}
     <div className="assessment-controls">

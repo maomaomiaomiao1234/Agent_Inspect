@@ -138,15 +138,14 @@ export function Assessments() {
   const displayJobs = jobs.map(j => ({ ...j, target_label: identities[j.id]?.name, purpose: j.purpose || identities[j.id]?.purpose }));
   const formalJobs = displayJobs.filter(j => !j.demo && j.purpose !== "adapter_validation");
   return <div className="assessment-page">
-    <div className="page-heading assessment-page-heading"><div><div className="eyebrow"><FlaskConical size={14} /> AGENT EVALUATION</div>
-      <h1>看清 Agent 的能力与评分。</h1>
-      <p>从题集得分到逐项验收，了解能力优势、薄弱维度与每个结论的依据。</p>
+    <div className="page-heading assessment-page-heading"><div>
+      <h1>主动评测</h1>
     </div><button className="primary" onClick={() => { setup.current?.scrollIntoView({ block: "start" }); setup.current?.focus({ preventScroll: true }); }}><Plus size={16} />新建评测</button></div>
     <div className="assessment-workspace-stats" aria-label="评测工作区概览">
-      <div><Users size={18} /><span>已评测 Agent</span><strong>{new Set(formalJobs.filter(j => j.completed > 0).map(j => j.target_id)).size}</strong><small>正式评测目标</small></div>
-      <div><Layers3 size={18} /><span>正式评测记录</span><strong>{formalJobs.length}</strong><small>最近 100 条记录中</small></div>
-      <div><Activity size={18} /><span>执行中 / 排队中</span><strong>{jobs.filter(j => ["queued", "running"].includes(j.state)).length}</strong><small>评测进度自动更新</small></div>
-      <div><FlaskConical size={18} /><span>控制示例 / 接入检查</span><strong>{jobs.length - formalJobs.length}</strong><small>与正式能力评测区分</small></div>
+      <div><Users size={18} /><span>已评测 Agent</span><strong>{new Set(formalJobs.filter(j => j.completed > 0).map(j => j.target_id)).size}</strong></div>
+      <div><Layers3 size={18} /><span>正式评测记录</span><strong>{formalJobs.length}</strong></div>
+      <div><Activity size={18} /><span>执行中 / 排队中</span><strong>{jobs.filter(j => ["queued", "running"].includes(j.state)).length}</strong></div>
+      <div><FlaskConical size={18} /><span>控制示例 / 接入检查</span><strong>{jobs.length - formalJobs.length}</strong></div>
     </div>
     {error && <div className="error-banner" role="alert">{error}</div>}
     <AssessmentHistory jobs={displayJobs} selected={selected} loading={loadingJobs} onOpen={openReport} onRefresh={() => setRefresh(x => x + 1)} />

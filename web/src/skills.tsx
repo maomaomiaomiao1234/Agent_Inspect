@@ -47,14 +47,7 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
     <div className="skills-page">
       <div className="page-heading">
         <div>
-          <div className="eyebrow">
-            <Wrench size={14} /> AGENT EVALUATION SKILL
-          </div>
           <h1>Skill 评测工具 · opencode-trace-review</h1>
-          <p>
-            专为 Agent 与自动化流程设计的可复用评测引擎。可作为独立 Skill
-            由其他 Agent、CI 或命令行直接调用，无需启动 Web 界面即可输出带证据的指标与结论。
-          </p>
         </div>
       </div>
 
@@ -64,25 +57,22 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
           <Bot size={18} />
           <span>Skill 标识</span>
           <strong className="mono">opencode-trace-review</strong>
-          <small>v0.3.0 · 内置引擎已构建</small>
+          <small>v0.3.0</small>
         </div>
         <div>
           <Cpu size={18} />
           <span>运行时环境</span>
           <strong>Python 3.12 / uv</strong>
-          <small>自动管理锁定依赖包</small>
         </div>
         <div>
           <Layers size={18} />
           <span>支持数据格式</span>
           <strong>OpenCode / Generic Trace</strong>
-          <small>trace_version: 1 · generic/2</small>
         </div>
         <div>
           <ShieldCheck size={18} />
           <span>判定机制</span>
           <strong>确定性独立验收</strong>
-          <small>结果、过程与用量三维分离</small>
         </div>
       </div>
 
@@ -94,10 +84,6 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
             <span className="skill-step-chip">01</span>
             <h2>轨迹导入与报告生成</h2>
           </div>
-          <p>
-            解析 OpenCode 会话导出或通用 Agent 轨迹，结合 Profile
-            验收规则，计算工具调用、耗时、Token 与行为检测，生成 Markdown 或结构化 JSON 报告。
-          </p>
 
           <div className="code-box">
             <div className="code-box-header">
@@ -134,9 +120,6 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
             <span className="skill-step-chip">02</span>
             <h2>双运行回归与行为比较</h2>
           </div>
-          <p>
-            当 Agent 修改了提示词、模型、工具或配置后，针对同一任务对比两次运行，严格检查实验条件可比性，检测重复调用、循环卡死及测试回归。
-          </p>
 
           <div className="code-box">
             <div className="code-box-header">
@@ -151,9 +134,6 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
             </div>
             <pre className="mono">{commands.compare}</pre>
           </div>
-          <p className="scenario-note">
-            命令将 JSON 输出至标准输出；捕获后可提取两者指标差异（时间、工具调用、Token）与具体行为检测差异。
-          </p>
         </section>
 
         {/* 3. 自定义任务脚手架 */}
@@ -162,11 +142,6 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
             <span className="skill-step-chip">03</span>
             <h2>业务任务脚手架生成</h2>
           </div>
-          <p>
-            如果你的任务是数据提取（如发票/票据）、深度调研或业务流程，可通过
-            <code>init-task</code> 快速生成包含 <code>trace.json</code> 和
-            <code>profile.json</code> 的可运行合成模板。
-          </p>
 
           <div className="code-box">
             <div className="code-box-header">
@@ -211,10 +186,6 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
             <span className="skill-step-chip">04</span>
             <h2>LLM-as-a-Judge 外部模型评审</h2>
           </div>
-          <p>
-            对纯输入输出任务，通过标准 API 和 Token 调用外部模型评审
-            Profile 中的 <code>external</code> 规则。结论明确标记为大模型判定，保持未通过规则的独立性。
-          </p>
 
           <div className="code-box">
             <div className="code-box-header">
@@ -229,9 +200,6 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
             </div>
             <pre className="mono">{commands.llmReview}</pre>
           </div>
-          <p className="scenario-note">
-            凭据从服务端环境变量或 trusted 配置中读取，不写入报告文件或持久化存储。
-          </p>
         </section>
       </div>
 
@@ -240,11 +208,7 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
         <section className="standalone-panel skill-quick-demo">
           <div className="section-toolbar">
             <div>
-              <h2>在 Web 界面快速检验 Skill 判定效果</h2>
-              <span className="scenario-note">
-                点击一键加载示例轨迹，直接在交互轨迹评估中查看 Skill
-                引擎生成的各项指标与证据
-              </span>
+              <h2>快速体验</h2>
             </div>
           </div>
           <div className="scenario-actions">
@@ -272,26 +236,6 @@ export function SkillTools({ dataDir, onRunDemo }: SkillToolsProps) {
           </div>
         </section>
       )}
-
-      {/* 规范与使用边界 */}
-      <section className="standalone-panel assessment-guide">
-        <h2>Skill 工具规范与边界</h2>
-        <ul>
-          <li>
-            <strong>确定性优先：</strong>{" "}
-            以工具退出码或自报完成不构成独立验收依据；必需检查必须有明确的测试输出、外部报告或参考依据。
-          </li>
-          <li>
-            <strong>Token 与成本准确：</strong>{" "}
-            缺失的用量保持未知，已采集下界标注 <code>≥</code>
-            ，不凭空插值或累加重试开销。
-          </li>
-          <li>
-            <strong>不执行轨迹中的恶意命令：</strong>{" "}
-            Skill 导入轨迹仅作为只读数据分析，绝对不会在宿主机上重新执行轨迹中出现的任何 shell 命令。
-          </li>
-        </ul>
-      </section>
     </div>
   );
 }

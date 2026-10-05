@@ -128,12 +128,10 @@ export function RepositoryAssessments({ onOpen, onReports }: { onOpen: (id: stri
 
   return <section className="standalone-panel assessment-guide" aria-label="从仓库评测">
     <h2>从仓库自动部署并评测</h2>
-    <p>提交公开 GitHub 仓库地址，自动拉取固定版本、构建、启动、评测并回收容器。
-      优先使用部署清单或 smolagents 配方；未知 Python 仓库可由 LLM 自动生成接入代码并验证。</p>
     {error && <p className="error-banner" role="alert">{error}</p>}
     {capabilities && !capabilities.enabled ? <p>仓库构建已关闭。可在服务端 .env 设置
       <code> AGENT_REVIEW_ENABLE_REPOSITORY_BUILDS=true</code> 并重启服务。</p> : capabilities?.enabled && <>
-      <p role="status">当前评测模式：{effectiveBackend === "offline" ? "离线校准，未调用模型服务，Token 统计不适用。" : "真实大模型"}
+      <p>当前评测模式：{effectiveBackend === "offline" ? "离线校准，未调用模型服务，Token 统计不适用。" : "真实大模型"}
         {effectiveBackend === "openai" && capabilities.model?.status === "configured" && <>
           {` · ${capabilities.model.model} · ${capabilities.model.api_url}；配置来自服务端 .env，凭据已自动接入。`}
           {capabilities.model.source === "review_shared" && "被测 Agent 使用与评审模型相同的配置。"}

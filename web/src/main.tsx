@@ -244,7 +244,7 @@ function App() {
             <Activity size={22} />
           </span>
           <span>
-            Trace Review<small>AGENT TASK ANALYSIS</small>
+            Trace Review<small>v0.3.0</small>
           </span>
         </a>
         <div className="workspace-label">
@@ -279,15 +279,10 @@ function App() {
             接入指南
           </a>
         </nav>
-        <div className="sidebar-note">
-          <ShieldCheck size={20} />
-          <strong>让结论有据可查</strong>
-          <p>结果、过程和资源分别呈现。数据不足时，保留未知。</p>
-        </div>
         <div className="sidebar-bottom">
           <span className="opencode-mark">OC</span>
           <span>
-            通用 Agent / OpenCode<small>本地分析 · v0.3.0</small>
+            OpenCode / Agent<small>v0.3.0</small>
           </span>
         </div>
       </aside>
@@ -314,7 +309,7 @@ function App() {
           </div>
           <div className="local-chip">
             <span className="live-dot" />
-            数据存储在评审服务
+            本地服务
           </div>
         </header>
         <main>
@@ -359,9 +354,7 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <div className="eyebrow">OPENCODE / RUNS · 交互轨迹评估</div>
                   <h1>交互轨迹评估</h1>
-                  <p>从工具调用到代码变更，全面解析 Agent 的运行轨迹、资源开销与独立验收依据。</p>
                 </div>
                 <button className="primary" onClick={() => setImporting(true)}>
                   <Plus size={17} />
@@ -390,37 +383,32 @@ function App() {
                     <small>次</small>
                   </strong>
                 </div>
-                <div className="overview-description">
-                  <GitBranch size={22} />
-                  <p>
-                    相同任务，两条轨迹。
-                    <br />
-                    <b>比较行为差异，追溯每个结论。</b>
-                  </p>
-                </div>
               </div>
               <section className="standalone-panel assessment-guide" aria-labelledby="scenario-heading">
                 <h2 id="scenario-heading">OpenCode 轨迹评估</h2>
-                <p>先用三种证据场景理解验收：过程正常不等于结果正确，证据不足也不等于失败。</p>
                 <div className="scenario-actions">
                   <button disabled={demoBusy} onClick={() => demo("focused")}>通过示例 · 聚焦修复</button>
                   <button disabled={demoBusy} onClick={() => demo("iterative")}>待补证据示例 · 反复定位</button>
                   <button disabled={demoBusy} onClick={() => demo("failed")}>失败示例 · 修复失败</button>
                 </div>
-                <p className="scenario-note" role="status">
-                  {demoBusy ? "正在加载示例…" : "日志和验证报告均为合成材料，没有真实运行 Agent 或验证器，不用于能力排名。"}
-                </p>
-                <a href="#/guide">如何接入真实数据与后续任务 <ArrowRight size={14} /></a>
+                {demoBusy && (
+                  <p className="scenario-note" role="status">
+                    正在加载示例…
+                  </p>
+                )}
               </section>
               <section className="standalone-panel assessment-guide" aria-labelledby="document-heading">
                 <h2 id="document-heading">PDF 文档转换评估</h2>
-                <p>同一份两页 PDF，对照独立标注检查正文、标题、阅读顺序、表格、完整性及 Markdown/JSON 一致性。</p>
                 <div className="scenario-actions">
                   {[["correct", "文档示例 · 正确"], ["omitted", "文档示例 · 内容遗漏"], ["table_error", "文档示例 · 表格错误"], ["order_error", "文档示例 · 顺序错误"], ["missing_reference", "文档示例 · 缺少参考"]].map(([candidate, label]) =>
                     <button key={candidate} disabled={documentBusy} onClick={() => documentDemo(candidate)}>{label}</button>
                   )}
                 </div>
-                <p className="scenario-note" role="status">{documentBusy ? "正在执行文档检查…" : "转换输出由内置模拟器提供，独立检查实际执行。未调用转换 Agent、OCR 或模型；不代表官方基准成绩。"}</p>
+                {documentBusy && (
+                  <p className="scenario-note" role="status">
+                    正在执行文档检查…
+                  </p>
+                )}
               </section>
               <div className="section-toolbar">
                 <div>
@@ -567,9 +555,7 @@ function App() {
               </section>
               {runs.length > 0 && (
                 <div className="table-footnote">
-                  <span>
-                    “待补证据”表示尚不能确认任务结果，不等于运行失败。
-                  </span>
+                  <span />
                   <button
                     className="text-button"
                     disabled={demoBusy}
@@ -988,7 +974,7 @@ function RunDetail({
         <div>
           <div className="eyebrow">
             RUN / {runId.slice(-8)}{" "}
-            {run.demo && <span className="demo-tag">示例，非 Agent 能力评测</span>}
+            {run.demo && <span className="demo-tag">示例</span>}
           </div>
           <h1>{run.title}</h1>
           <p>
@@ -1013,18 +999,14 @@ function RunDetail({
         <Status value={evaluation.outcome} />
         <p>{evaluation.outcome_reason}</p>
       </div>
-      <section className="standalone-panel assessment-guide" aria-labelledby="assessment-heading">
-        <h2 id="assessment-heading">如何理解这次评估</h2>
-        <ul>
-          <li><strong>结果：</strong>依据任务规则和匹配的验收材料；命令退出码 0 或 Agent 自报成功不代表任务完成。</li>
-          <li><strong>过程：</strong>诊断仅针对可见记录；未触发规则不代表没有问题，也不是能力总分。</li>
-          <li><strong>资源：</strong>区分观测、推导、部分和未知；缺失不填零，详见“指标与范围”。</li>
-          <li><strong>范围：</strong>单次运行不代表总体能力；待补证据不等于失败。</li>
-        </ul>
-        {run.demo && <p>示例不代表真实 Agent 能力；具体验证材料来源见记录。</p>}
-        {typeof run.artifacts.source_description === "string" && <p>材料来源声明：{run.artifacts.source_description}</p>}
-        {run.framework === "code-repair-fixture" && <p>耗时覆盖模拟实验及容器验证；未调用模型，Token 和费用保持未知。</p>}
-      </section>
+      {(run.demo || run.artifacts.source_description || run.framework === "code-repair-fixture") && (
+        <section className="standalone-panel assessment-guide" aria-labelledby="assessment-heading">
+          <h2 id="assessment-heading">如何理解这次评估</h2>
+          {run.demo && <p>示例不代表真实 Agent 能力；具体验证材料来源见记录。</p>}
+          {typeof run.artifacts.source_description === "string" && <p>材料来源声明：{run.artifacts.source_description}</p>}
+          {run.framework === "code-repair-fixture" && <p>耗时覆盖模拟实验及容器验证；未调用模型，Token 和费用保持未知。</p>}
+        </section>
+      )}
       <div className="metrics-grid">
         {["duration_ms", "tool_calls", "tokens_total", "cost_usd"].map(
           (key) => (
@@ -1555,9 +1537,7 @@ function CompareView({
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">COMPARE / TWO RUNS</div>
-          <h1>结果之外，比较过程。</h1>
-          <p>固定任务与验收条件，查看两次运行的实际差异。</p>
+          <h1>运行比较</h1>
         </div>
       </div>
       <div className="compare-selectors">
@@ -1918,9 +1898,7 @@ function Guide({ dataDir }: { dataDir?: string }) {
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">GET STARTED</div>
-          <h1>导入轨迹，定义任务标准。</h1>
-          <p>分析已有运行，并按任务要求检查结果、行为和资源。</p>
+          <h1>接入指南</h1>
         </div>
       </div>
       <section className="standalone-panel assessment-guide">
