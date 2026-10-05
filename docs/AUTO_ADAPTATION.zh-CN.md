@@ -20,12 +20,35 @@ AGENT_REVIEW_LLM_MODEL=你的模型名
 AGENT_REVIEW_LLM_TOKEN=你的密钥
 AGENT_REVIEW_AUTO_ADAPT=true
 AGENT_REVIEW_ADAPTATION_REPAIRS=1
-AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS=8192
-AGENT_REVIEW_ADAPTATION_TIMEOUT=90
+AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS=
+AGENT_REVIEW_ADAPTATION_THINKING=enabled
+AGENT_REVIEW_ADAPTATION_TIMEOUT=900
 AGENT_REVIEW_ADAPTATION_MAX_INPUT_CHARS=60000
 ```
 
 地址使用纯文本。API 密钥留在本机 `.env`，只进入所需的 API 请求和目标运行环境，不交给生成模型充当源码材料，也不注入 Docker build。生成会将相关源码片段发送给上述供应商；网页提交即启动这项工作。
+
+### 生成输出与思考模式
+
+适配器生成默认不设置输出 Token 上限。`AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS` 未设置、留空或设为 `auto` 时，请求中完全省略 `max_tokens` 和 `max_completion_tokens`，由供应商默认设置和模型正常完成判断决定输出长度。DeepSeek 生成默认启用思考模式；本项目的 DeepSeek 示例配置显式开启：
+
+```dotenv
+AGENT_REVIEW_ADAPTATION_THINKING=enabled
+AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS=
+AGENT_REVIEW_ADAPTATION_TIMEOUT=900
+```
+
+修改后重启 `uv run agent-review serve`，再提交新任务。`THINKING` 仅控制适配器生成；留空时不发送该供应商扩展参数，`enabled`/`disabled` 仅适用于支持此参数的 API。其他供应商默认不发送该参数，更换 `.env.example` 的供应商时应按其接口设置或留空。网页显示实际生成上限（供应商默认或显式数值）和思考模式。
+
+若希望主动设置生成上限，仍可填写正整数；生成配置已独立于评审配置，不再受共享评审器 32768 上限约束，实际接受范围由供应商决定。网页的「每案例输出 Token 上限」控制正式任务，与适配器生成分别配置。
+
+不发送上限不会取消供应商自身的默认输出/上下文边界；当前 DeepSeek 文档说明思考模式未传 `max_tokens` 时默认 64K。生成请求默认等待 900 秒，允许配置为大于 0 且不超过 3600 秒，响应内存保护为 8 MiB，以容纳较长思考输出；仍可取消任务。原桥接代码和协议验证继续执行。
+
+若返回 `finish_reason=length`，保存已知用量和生成设置后立即停止，不以同一供应商默认边界或同一显式上限自动修复。完整证据的每轮 `generation` 记录包含 `finish_reason`、`max_output_tokens`（供应商默认时为 null）、`output_limit_source`、`thinking`、`timeout_seconds` 和 `content_chars`；供应商返回 `completion_tokens_details.reasoning_tokens` 时单独统计思考 Token，该值已包含在输出 Token 中，不再次加入总数。旧失败记录不能补回未保存的结束原因或思考用量。
+
+`AGENT_REVIEW_TARGETS` 用于登记已运行的 HTTP Agent 服务；网页提交仓库链接自动构建时可留空，不需要先启动 smolagents 示例。
+
+供应商参数说明见 [DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/) 和 [Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)。
 
 ## 实际生成哪些文件
 

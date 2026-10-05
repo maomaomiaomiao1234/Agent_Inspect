@@ -12,6 +12,7 @@ from agent_trace_review.assessment_contracts import TargetResponse
 from agent_trace_review.llm_review import ReviewConfig
 from agent_trace_review.repository_adaptation import (
     STANDARD_ENV,
+    AdaptationConfig,
     AdaptationDraft,
     adaptation_capabilities,
     adaptation_config,
@@ -57,7 +58,7 @@ def draft(**overrides):
 
 
 def config():
-    return ReviewConfig(api_url=CONFIG["api_url"], model="generation-fixture", token="generation-test-key")
+    return AdaptationConfig(api_url=CONFIG["api_url"], model="generation-fixture", token="generation-test-key")
 
 
 def payload(session="session-a", turn=0, prompt="hello"):
@@ -129,6 +130,8 @@ def test_generator_structured_output_usage_and_secret_scrubbing(root):
     def provider(request):
         body = json.loads(request.content)
         assert body["response_format"] == {"type": "json_object"}
+        assert "thinking" not in body
+        assert "max_tokens" not in body and "max_completion_tokens" not in body
         assert "generation-test-key" not in request.content.decode()
         raw = draft().model_dump()
         raw["reason"] = "generation-test-key echoed by synthetic provider"
@@ -137,18 +140,97 @@ def test_generator_structured_output_usage_and_secret_scrubbing(root):
     result, metadata, error = asyncio.run(generate_adapter(source_materials(root), config(), transport=httpx.MockTransport(provider)))
     assert error is None and "generation-test-key" not in result.reason
     assert metadata["usage"] == {"prompt_tokens": 400, "completion_tokens": 100, "total_tokens": 500}
+    assert metadata["max_output_tokens"] is None and metadata["output_limit_source"] == "provider_default"
 
 
 def test_truncated_generation_retains_known_usage_and_cancel_sends_nothing(root):
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json={
-        "choices": [{"finish_reason": "length", "message": {"content": "{"}}], "usage": {"total_tokens": 200}}))
+        "choices": [{"finish_reason": "length", "message": {"content": "{", "reasoning_content": "private-reasoning"}}],
+        "usage": {"total_tokens": 200, "completion_tokens_details": {"reasoning_tokens": 100, "unsafe": "private"}}}))
     result, metadata, error = asyncio.run(generate_adapter(source_materials(root), config(), transport=transport))
     assert result is None and error == "adaptation_output_incomplete" and metadata["usage"]["total_tokens"] == 200
+    assert metadata["finish_reason"] == "length" and metadata["content_chars"] == 1
+    assert metadata["max_output_tokens"] == config().max_output_tokens
+    assert metadata["usage"]["reasoning_tokens"] == 100
+    assert "private" not in json.dumps(metadata)
     called = []
     with pytest.raises(RepositoryError, match="cancel_requested"):
         asyncio.run(generate_adapter(source_materials(root), config(), cancelled=lambda: True,
             transport=httpx.MockTransport(lambda r: called.append(r))))
     assert called == []
+
+
+@pytest.mark.parametrize("thinking", [None, "disabled", "enabled"])
+def test_generation_thinking_control_does_not_change_native_model_config(root, thinking):
+    selected = AdaptationConfig.model_validate(config().model_dump() | {"token": config().token, "thinking": thinking})
+    def provider(request):
+        body = json.loads(request.content)
+        if thinking is None:
+            assert "thinking" not in body
+        else:
+            assert body["thinking"] == {"type": thinking}
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(draft().model_dump())}}]})
+    result, metadata, error = asyncio.run(generate_adapter(source_materials(root), selected, transport=httpx.MockTransport(provider)))
+    assert result is not None and error is None and metadata["thinking"] == thinking
+    assert "thinking" not in CONFIG
+
+
+@pytest.mark.parametrize("parameter", ["max_tokens", "max_completion_tokens"])
+def test_generation_explicit_limit_is_optional_and_not_capped_by_review_config(root, parameter):
+    selected = AdaptationConfig.model_validate(config().model_dump() | {"token": config().token,
+        "max_output_tokens": 100000, "token_parameter": parameter})
+    def provider(request):
+        body = json.loads(request.content)
+        assert body[parameter] == 100000
+        assert ("max_completion_tokens" if parameter == "max_tokens" else "max_tokens") not in body
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(draft().model_dump())}}]})
+    result, metadata, error = asyncio.run(generate_adapter(source_materials(root), selected, transport=httpx.MockTransport(provider)))
+    assert result is not None and error is None and metadata["output_limit_source"] == "configured"
+    assert ReviewConfig(api_url=CONFIG["api_url"], model="review", token="review-secret").max_output_tokens == 4096
+
+
+def test_generation_accepts_long_thinking_output_and_retains_usage_without_storing_reasoning(root):
+    selected = config().model_copy(update={"thinking": "enabled"})
+    def provider(request):
+        body = json.loads(request.content)
+        assert body["thinking"] == {"type": "enabled"} and "max_tokens" not in body
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
+            "content": json.dumps(draft().model_dump()), "reasoning_content": "synthetic " * 70000}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 70100, "total_tokens": 70200,
+                      "completion_tokens_details": {"reasoning_tokens": 70000}}})
+    result, metadata, error = asyncio.run(generate_adapter(source_materials(root), selected, transport=httpx.MockTransport(provider)))
+    assert result is not None and error is None and metadata["max_output_tokens"] is None
+    assert metadata["usage"]["reasoning_tokens"] == 70000 and metadata["usage"]["total_tokens"] == 70200
+    assert "synthetic" not in json.dumps(metadata)
+
+
+def test_generation_still_bounds_response_memory(root):
+    from agent_trace_review.repository_adaptation import MAX_RESPONSE_BYTES
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=b" " * (MAX_RESPONSE_BYTES + 1)))
+    with pytest.raises(RepositoryError, match="adaptation_response_too_large"):
+        asyncio.run(generate_adapter(source_materials(root), config(), transport=transport))
+
+
+@pytest.mark.parametrize("source", ["target", "review"])
+@pytest.mark.parametrize("output", [None, "", "auto"])
+def test_generation_env_omits_limits_and_enables_deepseek_thinking(monkeypatch, source, output):
+    for name in list(os.environ):
+        if name.startswith(("AGENT_REVIEW_LLM_", "AGENT_REVIEW_TARGET_", "SMOL_MODEL_", "AGENT_REVIEW_ADAPTATION_")):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("AGENT_REVIEW_AUTO_ADAPT", "true")
+    prefix = "AGENT_REVIEW_LLM_" if source == "review" else "AGENT_REVIEW_TARGET_"
+    monkeypatch.setenv(prefix + "API_URL", "https://api.deepseek.com")
+    monkeypatch.setenv(prefix + "MODEL", "deepseek-flash")
+    monkeypatch.setenv(prefix + "TOKEN", "synthetic-key")
+    if output is not None:
+        monkeypatch.setenv("AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS", output)
+    selected = adaptation_config()
+    assert selected.max_output_tokens is None and selected.thinking == "enabled"
+    assert selected.timeout_seconds == 900 and adaptation_capabilities()["max_output_tokens"] is None
+    monkeypatch.setenv("AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS", "100000")
+    assert adaptation_config().max_output_tokens == 100000
+    monkeypatch.setenv("AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS", "0")
+    assert not adaptation_capabilities()["enabled"]
 
 
 def test_runtime_observes_original_entry_forwards_input_isolates_sessions_and_authenticates(root):
@@ -235,6 +317,9 @@ def test_generation_config_prefers_review_credentials_and_can_be_disabled(monkey
     monkeypatch.setenv("AGENT_REVIEW_TARGET_MODEL", "target-model")
     monkeypatch.setenv("AGENT_REVIEW_TARGET_TOKEN", "target-secret")
     assert adaptation_config().model == "target-model"
+    assert adaptation_config().thinking is None
+    monkeypatch.setenv("AGENT_REVIEW_ADAPTATION_THINKING", "disabled")
+    assert adaptation_config().thinking == "disabled"
     monkeypatch.setenv("AGENT_REVIEW_LLM_API_URL", "https://preset.example")
     monkeypatch.setenv("AGENT_REVIEW_LLM_MODEL", "preset-with-no-key")
     monkeypatch.setenv("AGENT_REVIEW_LLM_TOKEN", "")
@@ -243,6 +328,11 @@ def test_generation_config_prefers_review_credentials_and_can_be_disabled(monkey
     monkeypatch.setenv("AGENT_REVIEW_LLM_MODEL", "review-model")
     monkeypatch.setenv("AGENT_REVIEW_LLM_TOKEN", "judge-secret")
     assert adaptation_config().model == "review-model"
+    assert adaptation_capabilities()["thinking"] == "disabled"
     assert "judge-secret" not in json.dumps(adaptation_capabilities())
+    monkeypatch.setenv("AGENT_REVIEW_ADAPTATION_THINKING", "unknown")
+    assert not adaptation_capabilities()["enabled"]
+    monkeypatch.setenv("AGENT_REVIEW_ADAPTATION_THINKING", "")
+    assert adaptation_config().thinking is None
     monkeypatch.setenv("AGENT_REVIEW_AUTO_ADAPT", "false")
     assert not adaptation_capabilities()["enabled"]

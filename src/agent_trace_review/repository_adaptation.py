@@ -8,6 +8,7 @@ import re
 from importlib.resources import files
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import Field
@@ -22,6 +23,7 @@ from .target_client import scrub
 from .util import canonical, digest
 
 VERSION = "agent-review/python-adaptation-v1"
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 STANDARD_ENV = {"OPENAI_BASE_URL", "OPENAI_MODEL", "OPENAI_API_KEY", "AGENT_REVIEW_TARGET_API_URL",
                 "AGENT_REVIEW_TARGET_MODEL", "AGENT_REVIEW_TARGET_TOKEN", "SMOL_MODEL_API_BASE",
                 "SMOL_MODEL_ID", "SMOL_MODEL_API_KEY"}
@@ -72,20 +74,36 @@ class AdaptationDraft(Contract):
     limitations: list[str] = Field(default_factory=list, max_length=20)
 
 
+class AdaptationConfig(ReviewConfig):
+    max_output_tokens: int | None = Field(default=None, ge=1)
+    timeout_seconds: float = Field(default=900, gt=0, le=3600)
+    # Optional provider extension; never send it to other APIs unless configured.
+    thinking: Literal["enabled", "disabled"] | None = None
+
+
 def adaptation_config():
     if not env_bool("AGENT_REVIEW_AUTO_ADAPT", True):
         raise ReviewError("自动适配已由服务端关闭。")
-    overrides = {"max_output_tokens": int(os.environ.get("AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS", "8192")),
-                 "timeout_seconds": float(os.environ.get("AGENT_REVIEW_ADAPTATION_TIMEOUT", "90")),
-                 "max_input_chars": int(os.environ.get("AGENT_REVIEW_ADAPTATION_MAX_INPUT_CHARS", "60000"))}
     # A blank key with preset URL/model in .env.example permits using the target group.
     if os.environ.get("AGENT_REVIEW_LLM_TOKEN", "").strip():
-        return resolve_config(**overrides)
-    model = repository_model_config()
-    if model.status != "configured":
-        raise ReviewError("自动适配需要完整的 LLM 配置，请检查 .env 并重启服务。")
-    return ReviewConfig(api_url=os.environ[model.names[0]], model=os.environ[model.names[1]],
-                        token=os.environ[model.names[2]], **overrides)
+        config = resolve_config()
+    else:
+        model = repository_model_config()
+        if model.status != "configured":
+            raise ReviewError("自动适配需要完整的 LLM 配置，请检查 .env 并重启服务。")
+        config = ReviewConfig(api_url=os.environ[model.names[0]], model=os.environ[model.names[1]],
+                              token=os.environ[model.names[2]],
+                              token_parameter=os.environ.get("AGENT_REVIEW_LLM_TOKEN_PARAMETER", "max_tokens"))
+    try:
+        output = os.environ.get("AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS", "").strip().lower()
+        default_thinking = "enabled" if urlsplit(config.api_url).hostname == "api.deepseek.com" else ""
+        return AdaptationConfig.model_validate(config.model_dump() | {"token": config.token,
+            "max_output_tokens": None if output in {"", "auto"} else int(output),
+            "timeout_seconds": float(os.environ.get("AGENT_REVIEW_ADAPTATION_TIMEOUT", "900")),
+            "max_input_chars": int(os.environ.get("AGENT_REVIEW_ADAPTATION_MAX_INPUT_CHARS", "60000")),
+            "thinking": os.environ.get("AGENT_REVIEW_ADAPTATION_THINKING", default_thinking).strip().lower() or None})
+    except ValueError:
+        raise ReviewError("自动适配配置无效：输出 Token 留空、auto 或正整数；思考模式留空、enabled 或 disabled；超时需在 0–3600 秒内。") from None
 
 
 def adaptation_capabilities():
@@ -95,7 +113,8 @@ def adaptation_capabilities():
         if not 0 <= repairs <= 2:
             raise ValueError()
         return {"enabled": True, "model": config.model, "max_repairs": 2, "language": "python",
-                "default_repairs": repairs, "max_output_tokens": config.max_output_tokens}
+                "default_repairs": repairs, "max_output_tokens": config.max_output_tokens,
+                "thinking": config.thinking, "timeout_seconds": config.timeout_seconds}
     except (ReviewError, ValueError):
         return {"enabled": False, "model": None, "max_repairs": 2, "language": "python", "default_repairs": 1}
 
@@ -142,9 +161,13 @@ def source_materials(root, *, secrets=(), max_chars=60000):
 async def generate_adapter(materials, config, *, previous=None, feedback=None, cancelled=lambda: False, transport=None):
     context = {"files": materials, "previous": previous, "feedback": feedback}
     body = {"model": config.model, "stream": False, "response_format": {"type": "json_object"},
-            config.token_parameter: config.max_output_tokens,
             "messages": [{"role": "system", "content": SYSTEM + canonical(AdaptationDraft.model_json_schema())},
                          {"role": "user", "content": canonical(context)}]}
+    if config.max_output_tokens is not None:
+        body[config.token_parameter] = config.max_output_tokens
+    thinking = getattr(config, "thinking", None)
+    if thinking is not None:
+        body["thinking"] = {"type": thinking}
     if sum(len(message["content"]) for message in body["messages"]) > config.max_input_chars:
         raise RepositoryError("adaptation_input_too_large")
     secrets = [config.token.get_secret_value()]
@@ -158,14 +181,25 @@ async def generate_adapter(materials, config, *, previous=None, feedback=None, c
                 data = bytearray()
                 async for part in response.aiter_bytes():
                     data.extend(part)
-                    if len(data) > 512 * 1024:
+                    if len(data) > MAX_RESPONSE_BYTES:
                         raise RepositoryError("adaptation_response_too_large")
         payload = json.loads(data)
         safe_usage = {k: v for k, v in (payload.get("usage") or {}).items()
                       if k in {"prompt_tokens", "completion_tokens", "total_tokens"} and type(v) is int and v >= 0}
+        details = (payload.get("usage") or {}).get("completion_tokens_details")
+        if isinstance(details, dict):
+            reasoning = details.get("reasoning_tokens")
+            if type(reasoning) is int and reasoning >= 0:
+                safe_usage["reasoning_tokens"] = reasoning
         choice = payload["choices"][0]
         message = choice["message"]
-        metadata = {"model": config.model, "usage": safe_usage or None, "cost_usd": None}
+        finish = choice.get("finish_reason")
+        metadata = {"model": config.model, "usage": safe_usage or None, "cost_usd": None,
+                    "max_output_tokens": config.max_output_tokens, "thinking": thinking,
+                    "output_limit_source": "provider_default" if config.max_output_tokens is None else "configured",
+                    "timeout_seconds": config.timeout_seconds,
+                    "finish_reason": finish if finish in {None, "stop", "length", "tool_calls", "content_filter", "function_call", "insufficient_system_resource", "aborted"} else "other",
+                    "content_chars": len(message["content"]) if isinstance(message.get("content"), str) else 0}
         if choice.get("finish_reason") not in {None, "stop"} or message.get("tool_calls") or message.get("refusal"):
             return None, metadata, "adaptation_output_incomplete"
         try:

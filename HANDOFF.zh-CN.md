@@ -1,5 +1,19 @@
 # Agent_Inspect 开发交接
 
+## 生成不设 Token 上限并开启思考（2026-10-05）
+
+按用户最新要求，适配器生成配置独立覆盖 `ReviewConfig` 的输出与超时字段。未设置/留空/auto 的 `AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS` 解析为 None，真实请求完全省略 `max_tokens` 和 `max_completion_tokens`；正整数仍作为显式可选限制，不再继承共享评审配置的 32768 上限。DeepSeek 默认启用 thinking，其他供应商未显式设置时不发送扩展参数。本机 `.env` 已修改为留空输出上限、thinking=enabled、timeout=900，仅调整这些生成参数，凭据未输出且 `.env` 保持 Git 忽略。
+
+生成默认超时 900 秒，可配置至 3600；响应内存保护从 512 KiB 提高至 8 MiB，以容纳长思考输出，保留取消和结构验证。每轮元数据标记 output_limit_source=provider_default/configured，供应商自己的默认输出/上下文边界仍生效；length 仍不以相同设置自动修复。网页展示实际生成上限及思考模式，README、指南和 `.env.example` 同步。上节 disabled/16384 的建议是此前截断诊断阶段的历史记录。
+
+验收：420 passed、2 skipped；Ruff/diff 检查及前端构建通过，长思考响应、响应内存保护、两种 Token 参数省略和配置回退均已覆盖。本地实际 `.env` 经模拟传输确认不发送 Token 上限且 thinking=enabled；没有新增付费 API 调用。用户需要重启当前服务并提交新任务后实际验证陌生仓库。
+
+## DeepSeek 自动接入生成截断诊断（2026-10-05）
+
+用户首次陌生仓库测试 `repository_job_be7c1d2d32094a868a546a90d2b14319` 在生成阶段失败，两轮分别用满 8192 输出 Token，合计输入 20382、输出 16384、总计 36766，尚未进入接入验证。实际 `.env` URL/模型格式正确，生成选 LLM 组、被测选有密钥的 SMOL 组；没有修改本地 `.env` 或重新调用付费 API。旧记录没有保存供应商结束原因与思考用量，无法补回。
+
+新增可选 `AGENT_REVIEW_ADAPTATION_THINKING=enabled/disabled`，留空不发送扩展参数，仅作用于生成适配器。DeepSeek 推荐 disabled、生成输出 16384、超时 180，修改后重启源码服务。每轮保存受限结束原因、输出上限、思考设置与正文长度；返回的思考 Token 单独统计，包含在输出 Token 内，不重复加入总数。`finish_reason=length` 立即停止，保留用量，不以相同预算修复。操作见自动适配指南及 `.env.example`。相关回归 61 passed，Ruff 和 diff 检查通过；尚未用用户配置重跑真实仓库。
+
 ## Python LLM 自动适配（2026-10-05）
 
 用户授权实施未知仓库的自动接入。`recipe=auto` 优先清单与 smolagents 固定配方，然后对 Python 仓库调用服务端 LLM；也支持显式 `recipe=llm`。新增 `repository_adaptation.py` 和评审器固定的 `repository_templates/auto_runtime.py`，生成有界桥接代码及部署文件，宿主机仅静态检查，实际代码在 Docker 内运行。

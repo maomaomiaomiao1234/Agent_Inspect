@@ -375,7 +375,7 @@ def test_pipeline_build_failure_keeps_logs_and_no_assessment(pipeline, monkeypat
 
 
 @pytest.mark.parametrize("pipeline", ["model"], indirect=True)
-@pytest.mark.parametrize("failure", [None, "build", "native", "unsupported", "cancel"])
+@pytest.mark.parametrize("failure", [None, "build", "native", "unsupported", "cancel", "length"])
 def test_llm_adaptation_pipeline_validates_repairs_exports_and_keeps_usage_separate(pipeline, monkeypatch, failure):
     import agent_trace_review.repository_jobs as jobs
     from agent_trace_review.repository_adaptation import AdaptationDraft
@@ -394,10 +394,14 @@ def test_llm_adaptation_pipeline_validates_repairs_exports_and_keeps_usage_separ
         generations.append({k: v for k, v in kwargs.items() if k != "cancelled"})
         if failure == "cancel":
             raise RepositoryError("cancel_requested")
+        if failure == "length":
+            return None, {"model": "generator-fixture", "finish_reason": "length", "max_output_tokens": 8192,
+                "usage": {"prompt_tokens": 100, "completion_tokens": 8192, "reasoning_tokens": 8000, "total_tokens": 8292}}, "adaptation_output_incomplete"
         proposal = AdaptationDraft(supported=failure != "unsupported", reason="Missing native requirements" if failure == "unsupported" else "",
             entry={"path": "native.py", "symbol": "run", "line": 1},
             bridge_code="from native import run\ndef create_agent(config, recorder):\n    return None\ndef run_agent(agent, request, recorder):\n    return run(request)\n")
-        return proposal, {"model": "generator-fixture", "usage": {"total_tokens": 500}, "cost_usd": None}, None
+        return proposal, {"model": "generator-fixture", "usage": {"prompt_tokens": 300, "completion_tokens": 200,
+            "reasoning_tokens": 150, "total_tokens": 500}, "cost_usd": None}, None
     monkeypatch.setattr(jobs, "generate_adapter", generate)
     build_calls = []
     def build(argv, **kwargs):
@@ -429,10 +433,14 @@ def test_llm_adaptation_pipeline_validates_repairs_exports_and_keeps_usage_separ
     bundle = pipeline.bundle(job["id"])
     assert result["cleanup"] == "completed" and not (pipeline.work_root / job["id"]).exists()
     assert b"fixture-model-secret" not in store_bytes(pipeline.store)
-    if failure in {"unsupported", "cancel"}:
+    if failure in {"unsupported", "cancel", "length"}:
         assert result["state"] == ("cancelled" if failure == "cancel" else "failed")
         assert not build_calls and result["assessment_id"] is None
         assert len(bundle["adaptation"]["rounds"]) == 1
+        if failure == "length":
+            assert len(generations) == 1 and not validations
+            fields = bundle["adaptation"]["generation_usage"]["fields"]
+            assert fields["reasoning_tokens"]["value"] == 8000 and fields["total_tokens"]["value"] == 8292
         return
     assert result["state"] == "completed", result
     assert result["recipe"] == "llm"
@@ -451,6 +459,7 @@ def test_llm_adaptation_pipeline_validates_repairs_exports_and_keeps_usage_separ
         assert json.loads(archive.read("provenance.json"))["status"] == "validated"
         assert all(".env" != name for name in archive.namelist())
     assert bundle["adaptation"]["generation_usage"]["fields"]["total_tokens"]["value"] == len(generations) * 500
+    assert bundle["adaptation"]["generation_usage"]["fields"]["reasoning_tokens"]["value"] == len(generations) * 150
     assert "Profile" not in json.dumps(generations)
     if failure:
         assert generations[-1]["feedback"]["error"] in {"command_failed", "native_entry_not_observed"}

@@ -109,6 +109,8 @@ SMOL_MODEL_API_KEY=填写你的DeepSeek密钥
 uv run agent-review serve
 ```
 
+适配器生成默认不发送 `max_tokens` / `max_completion_tokens`，由供应商默认设置决定输出长度；`.env` 的 `AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS` 留空或设为 `auto` 即可。DeepSeek 生成开启思考模式：`AGENT_REVIEW_ADAPTATION_THINKING=enabled`。生成默认超时 900 秒，网页显示当前生成上限和思考设置，操作见 [自动适配指南](docs/AUTO_ADAPTATION.zh-CN.md#生成输出与思考模式)。
+
 本机服务默认启用仓库构建，需要 Git 和运行中的 Docker。可在 `.env` 设置 `AGENT_REVIEW_ENABLE_REPOSITORY_BUILDS=false` 关闭。评测默认真实模型（`AGENT_REVIEW_REPOSITORY_BACKEND=openai`），配置缺失时明确提示，不会自动改用离线模式。独立启动 smolagents 示例进程仍需使用 `uv run --env-file .env ...`。
 
 `.env`、真实 API Key、服务令牌和其他本地凭据禁止提交；提交前可检查：

@@ -375,7 +375,8 @@ class RepositoryManager:
                 for row in rounds:
                     usage = row.get("generation", {}).get("usage") or {}
                     generated_turns.append({"usage_mode": "model", "usage": {"tokens": {
-                        "input": usage.get("prompt_tokens"), "output": usage.get("completion_tokens"), "total": usage.get("total_tokens")}}})
+                        "input": usage.get("prompt_tokens"), "output": usage.get("completion_tokens"),
+                        "reasoning": usage.get("reasoning_tokens"), "total": usage.get("total_tokens")}}})
                 generation_usage = summarize_usage(generated_turns)
                 generation_usage["provenance"] = "exporter_reported"
                 for field in generation_usage["fields"].values():
@@ -464,6 +465,9 @@ class RepositoryManager:
                         exc = RepositoryError("adaptation_invalid_files")
                     row.update(status="failed", error=exc.code)
                     save_adaptation()
+                    # Repeating the same request budget cannot repair a truncated draft.
+                    if generation_error == "adaptation_output_incomplete" and metadata.get("finish_reason") == "length":
+                        raise
                     if exc.code in {"cancel_requested", "command_unavailable", "required_environment_unavailable",
                                     "required_environment_mapping_missing"} or index >= request.adaptation.max_repairs:
                         raise

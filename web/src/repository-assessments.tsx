@@ -5,7 +5,8 @@ import { UsageValue, type Usage } from "./usage";
 type Capabilities = { enabled: boolean; allowed_environment: string[];
   model?: { status: string; source: string; model: string | null; api_url: string | null; missing: string[]; reason: string };
   defaults?: { backend: string; cases: number; seed: number; deadline_seconds: number; max_output_tokens: number; attempts: number; concurrency: number };
-  adaptation?: { enabled: boolean; model: string | null; language: string; max_repairs: number; default_repairs: number };
+  adaptation?: { enabled: boolean; model: string | null; language: string; max_repairs: number; default_repairs: number;
+    max_output_tokens?: number | null; thinking?: "enabled" | "disabled" | null; timeout_seconds?: number };
   runtime?: { git_available: boolean; docker_available: boolean } };
 type RepositoryJob = {
   id: string; state: string; stage: string; commit: string | null; image_id: string | null;
@@ -183,7 +184,7 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
             {[0, 1, 2].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
         </div>
         {(autoAdapt || recipe === "llm") && <p className="scenario-note">自动适配会将相关源码片段发送到服务端配置的模型，生成文件仅在容器中运行。
-          {capabilities.adaptation?.enabled ? `适配模型：${capabilities.adaptation.model}。` : "未配置可用适配模型，未知仓库需要补齐 .env 或提供部署清单。"}
+          {capabilities.adaptation?.enabled ? `适配模型：${capabilities.adaptation.model}。生成输出 Token 上限：${capabilities.adaptation.max_output_tokens ?? "供应商默认"}；思考模式：${capabilities.adaptation.thinking === "enabled" ? "已开启" : capabilities.adaptation.thinking === "disabled" ? "已关闭" : "供应商默认"}。` : "未配置可用适配模型，未知仓库需要补齐 .env 或提供部署清单。"}
           先独立验证原 Agent 入口，再运行题集；生成和接入验证 Token 单独记录。未上传题集时使用源码规划的受控探测。</p>}
         <p>{suiteName ? `将使用：${suiteName}，保留文件中的预算、重复次数与并发配置。` : sourcePlanning
           ? "将根据固定提交生成题集和漏测清单。目标须支持题目的 JSON 输出；离线 smolagents 校准模型不支持通用题目。"
