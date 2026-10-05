@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 const capabilities = { enabled: true, allowed_environment: [],
+  gateway: { available: true, recipes: ["llm"], default: false },
   adaptation: { enabled: true, model: "fixture-generator", language: "python", max_repairs: 2, default_repairs: 1 },
   model: { status: "configured", source: "target", model: "fixture-model", api_url: "https://provider.example/v1", missing: [], reason: "模型配置就绪" },
   defaults: { backend: "openai", cases: 12, seed: 42, deadline_seconds: 60, max_output_tokens: 2048, attempts: 1, concurrency: 1 } };
@@ -134,9 +135,10 @@ test("unknown Python repository enables generation, repair settings and separate
   await section.getByText("配置构建与题集", { exact: true }).click();
   await expect(section.getByLabel("未知仓库自动适配")).toBeChecked();
   await section.getByLabel("适配修复次数").selectOption("2");
+  await section.getByLabel("通过模型网关保留用量（Python 自动适配试点）").check();
   await expect(section).toContainText("适配模型：fixture-generator");
   await section.getByRole("button", { name: "拉取、部署并评测", exact: true }).click();
-  expect(submissions[0]).toMatchObject({ recipe: "auto", backend: "auto", environment: {}, adaptation: { enabled: true, max_repairs: 2 } });
+  expect(submissions[0]).toMatchObject({ recipe: "llm", model_gateway: true, backend: "auto", environment: {}, adaptation: { enabled: true, max_repairs: 2 } });
   await expect(section).toContainText("自动适配 2 轮 · 接入验证 1 次");
   await expect(section).toContainText("生成 Token：500 · 接入验证 Token：≥15");
   await expect(section.getByRole("button", { name: "查看接入检查 1" })).toBeVisible();

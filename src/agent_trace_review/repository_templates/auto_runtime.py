@@ -93,6 +93,11 @@ class Recorder(ModelRecorder):
             raise
 
     def prepare_http(self, request):
+        if self.config.get("gateway"):
+            token = getattr(self, "gateway_token", None)
+            if not token:
+                raise RuntimeError("gateway turn credential required")
+            request.headers["authorization"] = "Bearer " + token
         remaining = self.remaining()
         request.extensions["timeout"] = {k: remaining for k in ("connect", "read", "write", "pool")}
         maximum = self.request["budget"].get("max_output_tokens")
@@ -157,6 +162,7 @@ def create_app(bridge, entry, source_root, config, service_token, startup_error=
         recorder = Recorder(request, config, context={
             key: incoming.headers[header][:200] for key, header in CONTEXT_HEADERS.items() if header in incoming.headers
         })
+        recorder.gateway_token = incoming.headers.get("x-agent-review-gateway-token")
         observed = False
         failure = None
         def profile(frame, event, arg):
@@ -234,7 +240,8 @@ if __name__ == "__main__":
     except Exception as exc:
         bridge, startup_error = None, exc
     config = {"api_url": os.environ["AGENT_REVIEW_TARGET_API_URL"], "model": os.environ["AGENT_REVIEW_TARGET_MODEL"],
-              "api_key": os.environ["AGENT_REVIEW_TARGET_TOKEN"]}
+              "api_key": os.environ["AGENT_REVIEW_TARGET_TOKEN"],
+              "gateway": os.environ.get("AGENT_REVIEW_GATEWAY_MODE") == "true"}
     app = create_app(bridge, json.loads(Path("/opt/agent/entry.json").read_text()), source, config,
                      os.environ["ADAPTER_SERVICE_TOKEN"], startup_error=startup_error)
     uvicorn.run(app, host="0.0.0.0", port=9000)

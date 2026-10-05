@@ -24,6 +24,7 @@ test("source plan generates, runs, reports quality and preserves frozen suite", 
   await page.getByRole("button", { name: "开始评测", exact: false }).click();
   await expect(page.getByRole("heading", { name: "评测详情 · source-planning-control" })).toBeVisible();
   await expect(page.getByText("已完成 · 16/16", { exact: false })).toBeVisible({ timeout: 30000 });
+  await page.getByText("预算与维度 · 原始统计", { exact: true }).click();
   const quality = page.getByRole("region", { name: "维度覆盖与质量" });
   await expect(quality).toContainText("案例并发上限 3");
   await expect(quality).toContainText("Token 完整 0/16");

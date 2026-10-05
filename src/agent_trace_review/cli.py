@@ -372,6 +372,7 @@ def assess_repository(
     attempts: int = typer.Option(1, min=1, max=3), concurrency: int = typer.Option(1, min=1, max=4),
     auto_adapt: bool = typer.Option(True, "--auto-adapt/--no-auto-adapt", help="未知 Python 仓库使用服务端 LLM 生成适配器。"),
     adaptation_repairs: int = typer.Option(1, min=0, max=2, help="自动适配最多修复次数。"),
+    model_gateway: bool = typer.Option(False, "--model-gateway", help="Python 自动适配经受控模型网关记录外部用量。"),
     env: list[str] = typer.Option([], help="运行期环境变量 NAME=HOST_ENV；只传名称，不传密钥值。"),
     data_dir: Path = Path(".agent-review"), output: Path | None = None,
 ):
@@ -390,6 +391,7 @@ def assess_repository(
         request = RepositoryAssessmentInput(repository_url=repository_url, ref=ref, recipe=recipe,
             manifest_path=manifest, generation=SuiteGenerationInput(cases=cases, seed=seed), backend=backend,
             adaptation={"enabled": auto_adapt, "max_repairs": adaptation_repairs},
+            model_gateway=model_gateway,
             planning=RepositoryPlanInput(cases=cases, seed=seed, attempts=attempts, concurrency=concurrency) if source_plan else None,
             environment=environment, suite=AssessmentSuite.model_validate_json(suite.read_bytes()) if suite else None)
         manager = AssessmentManager(Store(data_dir), {})

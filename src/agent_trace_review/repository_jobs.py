@@ -231,12 +231,16 @@ class RepositoryManager:
         return {"enabled": self.enabled, "recipes": ["auto", "manifest", "smolagents", "llm"],
                 "allowed_environment": sorted(self.allowed_environment), "providers": ["public_github_https"],
                 "model": self.model_config.public(), "defaults": self.defaults, "adaptation": adaptation_capabilities(),
+                "gateway": {"available": True, "recipes": ["llm"], "default": False},
                 "runtime": {"git_available": shutil.which("git") is not None, "docker_available": shutil.which("docker") is not None}}
 
     def resolve_request(self, request):
         if set(request.environment.values()) - self.allowed_environment:
             raise ValueError("环境变量未获管理员授权；配置 AGENT_REVIEW_REPOSITORY_ENV 允许的名称。")
         backend = self.defaults["backend"] if request.backend == "auto" else request.backend
+        if request.model_gateway and (backend != "openai" or request.recipe in {"manifest", "smolagents"}
+                                      or request.repository_url.lower() == SMOLAGENTS):
+            raise ValueError("网关试点需要真实模型模式和 Python 自动适配；当前不支持清单或 smolagents 配方。")
         if request.recipe == "llm":
             if backend != "openai":
                 raise ValueError("LLM 自动适配需要真实模型模式。")
@@ -437,7 +441,8 @@ class RepositoryManager:
                     target = make_target(manifest, image_id)
                     child, snapshot = prepare_assessment(self.assessments.db, target, smoke, repository=repository)
                     child_body = {k: v for k, v in child.items() if k not in {"id", "state", "created_at", "updated_at", "cancel_requested"}}
-                    child_body.update(purpose="adapter_validation", build_provenance={**plan, "image_id": image_id,
+                    child_body.update(purpose="adapter_validation", model_gateway=request.model_gateway,
+                        build_provenance={**plan, "image_id": image_id,
                         "repository_job_id": job_id})
                     self.assessments.db.update(child["id"], child_body)
                     row["validation_id"] = child["id"]
@@ -491,6 +496,8 @@ class RepositoryManager:
             repository = self.assessments.db.save_repository(inspect_repository(root, commit, request.repository_url))
             generated = request.recipe == "llm" or (request.recipe == "auto" and request.adaptation.enabled
                 and not (root / request.manifest_path).exists() and request.repository_url.lower() != SMOLAGENTS)
+            if request.model_gateway and not generated:
+                raise RepositoryError("gateway_requires_generated_python_adapter")
             image_id = None
             if generated:
                 manifest, plan, image_id = adapt()
@@ -529,6 +536,7 @@ class RepositoryManager:
             child, snapshot = prepare_assessment(self.assessments.db, target, suite, repository=repository)
             body = {k: v for k, v in child.items() if k not in {"id", "state", "created_at", "updated_at", "cancel_requested"}}
             body["build_provenance"] = {**plan, "image_id": image_id, "repository_job_id": job_id}
+            body["model_gateway"] = request.model_gateway
             body["target_hash"] = digest({**target.model_dump(), "repository": request.repository_url})
             body["limitations"] = [v for v in body["limitations"] if "目标服务与源码版本" not in v]
             body["limitations"].append("记录本机从固定 checkout 构建的镜像；外部依赖及基础镜像由 Dockerfile 决定，未认证上游签名。")

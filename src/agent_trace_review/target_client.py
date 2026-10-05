@@ -22,6 +22,7 @@ MAX_RESPONSE = 256 * 1024
 class TargetError(Exception):
     def __init__(self, code: str):
         self.code = code
+        self.gateway = None
         super().__init__(code)
 
 
@@ -40,10 +41,11 @@ def scrub(value, secrets=()):
 
 
 class TargetClient:
-    def __init__(self, target: TargetDefinition, endpoint: str | None = None, transport=None, token_override=None):
+    def __init__(self, target: TargetDefinition, endpoint: str | None = None, transport=None, token_override=None, gateway=None):
         self.target = target
         self.endpoint = (endpoint or target.endpoint or "").rstrip("/")
         self.transport = transport
+        self.gateway = gateway
         self.token = token_override if token_override is not None else os.environ.get(target.token_env, "") if target.token_env else ""
         if target.token_env and not self.token:
             raise TargetError("missing_target_credential")
@@ -51,13 +53,15 @@ class TargetClient:
         if target.deployment:
             self.secrets += [os.environ.get(v, "") for v in target.deployment.environment.values()]
 
-    async def _exchange(self, method, path, payload, timeout, context=None):
+    async def _exchange(self, method, path, payload, timeout, context=None, gateway_token=None):
         async def stream():
             headers = {"Accept": "application/json", "Accept-Encoding": "identity"}
             headers.update({header: str(context[key]) for key, header in CONTEXT_HEADERS.items()
                             if context and key in context})
             if self.token:
                 headers["Authorization"] = "Bearer " + self.token
+            if gateway_token:
+                headers["x-agent-review-gateway-token"] = gateway_token
             async with httpx.AsyncClient(
                 trust_env=False,
                 follow_redirects=False,
@@ -94,16 +98,29 @@ class TargetClient:
     def call(self, payload: dict, timeout: float, *, context=None) -> TargetResponse:
         if len(canonical(payload).encode()) > MAX_REQUEST:
             raise TargetError("request_too_large")
-        raw = asyncio.run(self._exchange("POST", self.target.task_path, payload, timeout, context))
+        lease, gateway_token = self.gateway.issue(context or {}, payload) if self.gateway else (None, None)
         try:
-            response = TargetResponse.model_validate(scrub(raw, self.secrets))
-            if response.trace and (
-                response.trace.session_id != payload["session_id"] or response.trace.turn != payload["turn"]
-            ):
-                raise ValueError("Target trace does not match the requested session/turn")
+            raw = asyncio.run(self._exchange("POST", self.target.task_path, payload, timeout, context, gateway_token))
+            try:
+                response = TargetResponse.model_validate(scrub(raw, [*self.secrets, gateway_token]))
+                if response.trace and (
+                    response.trace.session_id != payload["session_id"] or response.trace.turn != payload["turn"]
+                ):
+                    raise ValueError("Target trace does not match the requested session/turn")
+            except ValueError:
+                raise TargetError("invalid_target_contract") from None
+        except TargetError as exc:
+            if self.gateway:
+                exc.gateway = self.gateway.finish(lease)
+            raise
+        except BaseException:
+            if self.gateway:
+                self.gateway.finish(lease)
+            raise
+        else:
+            if self.gateway:
+                response._gateway = self.gateway.finish(lease)
             return response
-        except ValueError:
-            raise TargetError("invalid_target_contract") from None
 
     def health(self, timeout=5) -> dict:
         if not self.target.health_path:
@@ -149,7 +166,8 @@ def remove_container(name, owner=None):
 
 
 @contextmanager
-def deployed_target(target: TargetDefinition, *, resources=None, job_id=None, cancelled=lambda: False, service_token=None):
+def deployed_target(target: TargetDefinition, *, resources=None, job_id=None, cancelled=lambda: False, service_token=None,
+                    runtime_environment=None):
     """Never builds/pulls images, mounts the host, or falls back to host execution."""
     if not target.deployment:
         yield (
@@ -158,6 +176,7 @@ def deployed_target(target: TargetDefinition, *, resources=None, job_id=None, ca
         )
         return
     config = target.deployment
+    runtime_environment = runtime_environment or {}
     image = json.loads(_docker("image", "inspect", config.image))[0]
     if image["Id"] != config.image or image.get("Config", {}).get("Volumes"):
         raise TargetError("image_identity_or_volumes_invalid")
@@ -192,16 +211,19 @@ def deployed_target(target: TargetDefinition, *, resources=None, job_id=None, ca
         ]
         if resources:
             args += ["--label", f"agent-inspect.owner={resources.resource_owner}", "--label", f"agent-inspect.job={job_id}"]
-        if config.environment or config.service_token_variable:
+        if config.environment or config.service_token_variable or runtime_environment:
             fd, env_file = tempfile.mkstemp(prefix="agent-inspect-env-")
             with os.fdopen(fd, "w") as output:
                 if resources:
                     resources.resource_env(name, env_file)
                 for name_in_container, host_name in config.environment.items():
-                    value = os.environ.get(host_name)
+                    value = runtime_environment.get(name_in_container, os.environ.get(host_name))
                     if value is None or "\n" in value or "\r" in value:
                         raise TargetError("invalid_deployment_environment")
                     output.write(f"{name_in_container}={value}\n")
+                for key, value in runtime_environment.items():
+                    if key not in config.environment:
+                        output.write(f"{key}={value}\n")
                 if config.service_token_variable:
                     if not service_token:
                         raise TargetError("missing_generated_service_token")

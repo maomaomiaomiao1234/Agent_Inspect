@@ -10,6 +10,8 @@ from .util import canonical, digest, now
 class AssessmentStore:
     def __init__(self, store: Store):
         self.store = store
+        from .model_gateway import GatewayStore
+        self.gateway_records = GatewayStore(store)
         with store.connect() as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS repository_profiles (
@@ -62,7 +64,7 @@ class AssessmentStore:
             ).fetchone()
         if not row:
             raise KeyError(job_id)
-        return {
+        result = {
             **json.loads(row[4]),
             "id": job_id,
             "created_at": row[0],
@@ -70,6 +72,9 @@ class AssessmentStore:
             "state": row[2],
             "cancel_requested": bool(row[3]),
         }
+        if result.get("model_gateway"):
+            result["gateway"] = {k: v for k, v in self.gateway_records.snapshot(job_id).items() if k != "events"}
+        return result
 
     def update(self, job_id, body, state=None):
         with self.store.connect() as conn:
@@ -116,6 +121,7 @@ class AssessmentStore:
             "repository_id",
             "error",
             "demo",
+            "purpose",
             "curves",
             "created_at",
             "updated_at",

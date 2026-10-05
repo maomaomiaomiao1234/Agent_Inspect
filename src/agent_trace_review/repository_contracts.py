@@ -53,6 +53,7 @@ class RepositoryAssessmentInput(Contract):
     backend: Literal["auto", "offline", "openai"] = "offline"
     settings: RepositoryRunSettings | None = None
     adaptation: RepositoryAdaptationSettings = Field(default_factory=RepositoryAdaptationSettings)
+    model_gateway: bool = False
     environment: dict[str, str] = Field(default_factory=dict, max_length=20)
 
     _url = field_validator("repository_url")(github_url)

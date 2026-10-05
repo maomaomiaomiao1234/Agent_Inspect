@@ -41,6 +41,7 @@ import type {
   Run,
 } from "./generated/models";
 import "./style.css";
+import "./assessment-style.css";
 
 type Summary = Omit<
   Run,

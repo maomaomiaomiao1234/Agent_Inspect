@@ -205,6 +205,7 @@ class TargetResponse(Contract):
     trace: TargetTrace | None = None
     adapter_evidence: NativeEntryEvidence | None = None
     _aggregate_fields: set[str] = PrivateAttr(default_factory=set)
+    _gateway: dict | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def bounded_usage(self):

@@ -1,5 +1,15 @@
 # Agent_Inspect 开发交接
 
+## 受控模型网关最小闭环（2026-10-05）
+
+用户要求继续下一步，已实现第三阶段试点。新增 `model_gateway.py`：按轮次发放短期凭据、固定上游和模型、JSON/SSE 转发、SQLite 调用持久化、输出预算已知下界扣减、目标断开后的有界接收及重启恢复。供应商密钥不注入目标容器，调用归属从凭据映射取得。网页/CLI/API 可选 `model_gateway`，仅支持 Python LLM 自动适配；默认关闭，smolagents 固定配方和清单接入不静默回退。
+
+案例统计选网关来源，目标原始轨迹保留在轮次工件；gateway_request_id 关联原模型与工具事件，重复记录不相加。页面和报告提供独立网关汇总，证据包包含逐次外部记录。已验证真实 Docker 正常流程，以及容器在模型调用后 `os._exit(23)`，后者答案 inconclusive 但保留 ≥15 Token；重启评审服务后仍可查看和导出。另以实际子进程在 SSE 返回已知 usage 后被 kill 验证持久化与恢复。
+
+指南见 [MODEL_GATEWAY](docs/MODEL_GATEWAY.zh-CN.md)，详细验收见 [验收记录](MODEL_GATEWAY_VALIDATION.zh-CN.md)。后端 475 passed/2 skipped、Chrome 9 passed，Ruff/前端构建/wheel 检查通过，Skill 已刷新且启动器 6 项测试通过。临时测试服务已关闭。本轮使用本地合成供应商，未发生付费模型调用，未读取/修改本地 `.env`，保留既有 `.env.example` 修改。
+
+边界：网关在评审进程中，独立于目标容器但尚未独立于评审服务；只保留已提交的记录，未返回 usage 仍未知。当前没有容器出站强制限制、账单认证或恶意多租户隔离。文档原先建议 LiteLLM，首版为最小集成复用现有存储与解析；以后可扩展外部网关适配。下一步优先真实 Python 仓库回归集，再考虑网关独立进程、出站控制和 smolagents/清单适配。
+
 ## 通用模型用量采集第二阶段（2026-10-05）
 
 本轮用户确认继续 Token 统计第二阶段。新增 `provider_telemetry.py`：OpenAI 兼容/DeepSeek 字段规范化、同步/异步模型包装、按任务上下文启用的 httpx JSON/SSE 观察。SDK 实际重试分别计数，显式包装不重复计入，流式快照不累加；失败/取消/提前关闭保留已知下界。缓存命中/写入/未命中和推理用量保留为输入或输出细分，不加进总量。
@@ -316,10 +326,10 @@ REVIEW_TEST_URL=http://127.0.0.1:18765 REVIEW_CODE_REPAIR_FIXTURES=1 npm --prefi
 ## 8. 下一会话接续指令
 
 ```text
-先读本文件顶部、docs/PROVIDER_TELEMETRY.zh-CN.md、PROVIDER_TELEMETRY_VALIDATION.zh-CN.md。
+先读本文件顶部、docs/MODEL_GATEWAY.zh-CN.md、MODEL_GATEWAY_VALIDATION.zh-CN.md。
 Task 1/2/3 控制示例、Task 4 主动评测、Python LLM 自动适配和 Token 统计第二阶段已完成。
 当前是 Git main 工作区；先检查 git status，保护用户已有改动，不按历史“无 .git”记录操作。
-下一开发阶段是 docs/TOKEN_USAGE_EXPLORATION.zh-CN.md 中第三阶段的受控模型网关试点。
+网关最小试点已完成。下一步优先真实 Python 仓库回归集，再扩展独立网关进程、出站控制和更多适配器。
 通用 SDK/HTTP 采集默认 partial，只覆盖配置端点与实际传播的上下文，不能恢复崩溃后未返回的进程内记录。
 被测、接入检查和适配生成用量分别保存；缓存/推理细分不与输入/输出重复相加。
 真实陌生仓库验证需明确目标和调用范围；不要无故重复付费测试，不输出 .env 凭据。

@@ -3,6 +3,7 @@ import { api, DownloadLink } from "./api-client";
 import { UsageValue, type Usage } from "./usage";
 
 type Capabilities = { enabled: boolean; allowed_environment: string[];
+  gateway?: { available: boolean; recipes: string[]; default: boolean };
   model?: { status: string; source: string; model: string | null; api_url: string | null; missing: string[]; reason: string };
   defaults?: { backend: string; cases: number; seed: number; deadline_seconds: number; max_output_tokens: number; attempts: number; concurrency: number };
   adaptation?: { enabled: boolean; model: string | null; language: string; max_repairs: number; default_repairs: number;
@@ -16,6 +17,7 @@ type RepositoryJob = {
   request: { repository_url: string; ref: string }; demo?: boolean;
   log_artifacts: { stage: string; artifact_id: string }[];
 };
+export type RepositoryReportIdentity = Pick<RepositoryJob, "assessment_id" | "validation_ids" | "request">;
 const stages: Record<string, string> = { queued: "排队", fetching: "拉取源码", inspecting: "检查配置",
   adapting: "生成适配器", repairing: "修复适配器", validating: "验证原 Agent 接入",
   building: "构建镜像", assessing: "部署并评测", cleaning: "清理资源", finished: "结束" };
@@ -41,10 +43,12 @@ const errors: Record<string, string> = {
   adaptation_provider_http_error: "自动适配模型 API 返回错误，请检查配置。",
   adaptation_output_incomplete: "自动适配模型输出被截断或无效，可调整服务端生成 Token 上限。",
   native_entry_not_observed: "未观察到原仓库入口被调用。",
+  gateway_requires_generated_python_adapter: "网关试点需要选择 Python 自动适配入口。",
+  gateway_configuration_or_start_failed: "网关无法启动，请检查监听地址、容器访问地址及目标模型配置。",
   agent_execution_failed: "生成的适配器调用失败，诊断与已采集用量见完整记录。",
 };
 
-export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void }) {
+export function RepositoryAssessments({ onOpen, onReports }: { onOpen: (id: string) => void; onReports?: (reports: RepositoryReportIdentity[]) => void }) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [url, setUrl] = useState("");
   const [ref, setRef] = useState("HEAD");
@@ -60,6 +64,7 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
   const [concurrency, setConcurrency] = useState(1);
   const [sourcePlanning, setSourcePlanning] = useState(false);
   const [autoAdapt, setAutoAdapt] = useState(true);
+  const [modelGateway, setModelGateway] = useState(false);
   const [adaptationRepairs, setAdaptationRepairs] = useState(1);
   const [suite, setSuite] = useState<unknown>(null);
   const [suiteName, setSuiteName] = useState("");
@@ -84,12 +89,13 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
         const data = await api<RepositoryJob[]>("/repository-jobs");
         if (stopped) return;
         setJobs(data);
+        onReports?.(data);
         if (data.some(j => ["queued", "running"].includes(j.state))) timer = setTimeout(load, 1500);
       } catch (e) { if (!stopped) setError((e as Error).message); }
     }
     load();
     return () => { stopped = true; clearTimeout(timer); };
-  }, [refresh]);
+  }, [refresh, onReports]);
 
   async function submit() {
     setBusy(true); setError("");
@@ -105,6 +111,7 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
         body: JSON.stringify({ repository_url: url.trim(), ref, recipe, manifest_path: manifest, backend,
           environment: mappings, suite, planning: sourcePlanning && !suite ? { cases, seed, attempts, concurrency } : null,
           adaptation: { enabled: autoAdapt, max_repairs: adaptationRepairs },
+          ...(modelGateway ? { model_gateway: true } : {}),
           settings: suite ? null : { deadline_seconds: deadline, max_output_tokens: maxOutputTokens, attempts, concurrency },
           generation: { template: "smolagents", cases, seed } }) });
       setRefresh(v => v + 1);
@@ -113,6 +120,7 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
   }
 
   const effectiveBackend = backend === "auto" ? capabilities?.defaults?.backend || "openai" : backend;
+  useEffect(() => { if (effectiveBackend !== "openai") setModelGateway(false); }, [effectiveBackend]);
   const modelMissing = effectiveBackend === "openai" && capabilities?.model?.status !== "configured" && !environment.trim();
   const runtimeMissing = capabilities?.runtime && (!capabilities.runtime.git_available || !capabilities.runtime.docker_available);
   const settingsInvalid = !suite && (!Number.isFinite(deadline) || deadline < 0.05 || deadline > 60
@@ -159,6 +167,10 @@ export function RepositoryAssessments({ onOpen }: { onOpen: (id: string) => void
           {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
       </div>
       <details><summary>配置构建与题集</summary>
+        {capabilities.gateway?.available && <label><input type="checkbox" checked={modelGateway}
+          disabled={effectiveBackend !== "openai"} onChange={e => { setModelGateway(e.target.checked); if (e.target.checked) setRecipe("llm"); }} />
+          通过模型网关保留用量（Python 自动适配试点）</label>}
+        {modelGateway && <p>模型请求在评审端保存用量，目标中断后仍可查看。仅覆盖经过网关的调用；启用后使用 Python 自动适配。</p>}
         <div className="assessment-controls">
           <label>接入方式<select aria-label="接入方式" value={recipe} onChange={e => setRecipe(e.target.value)}>
             <option value="auto">自动识别</option><option value="manifest">仓库部署清单</option><option value="smolagents">smolagents</option>

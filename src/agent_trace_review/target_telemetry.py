@@ -8,7 +8,10 @@ def _sum_known(values):
 
 
 def telemetry_summary(turns, execution_complete=True):
-    traces = [t.get("trace") for t in turns]
+    has_gateway = any(t.get("gateway") is not None for t in turns)
+    traces = [{"coverage": "partial", "events": [*t["gateway"]["events"],
+               *[e for e in (t.get("trace") or {}).get("events", []) if e["kind"] == "tool"]]}
+              if t.get("gateway") is not None else t.get("trace") for t in turns]
     available = [t for t in traces if t is not None]
     complete = execution_complete and bool(traces) and all(
         t is not None and t["coverage"] == "complete" for t in traces
@@ -29,6 +32,7 @@ def telemetry_summary(turns, execution_complete=True):
     for model in sorted({e.get("model") or "unknown" for e in llms}):
         selected = [e for e in llms if (e.get("model") or "unknown") == model]
         usage = summarize_usage([{"trace": {"coverage": "complete" if complete else "partial", "events": selected},
+                                  **({"gateway": {"events": selected}} if has_gateway else {}),
                                   "usage_mode": "offline" if turns and all(t.get("usage_mode") == "offline" for t in turns)
                                   else "unknown"}], execution_complete)
         tokens = {key: usage["fields"][key + "_tokens"]["value"]
@@ -38,7 +42,7 @@ def telemetry_summary(turns, execution_complete=True):
                        "usage": usage, "duration_ms": duration(selected)})
     return {
         "coverage": "complete" if complete else "partial" if available else "unavailable",
-        "provenance": "target_reported",
+        "provenance": "gateway_reported" if has_gateway else "target_reported",
         "llm_calls": count(llms),
         "tool_calls": count(tools),
         "llm_errors": sum(e["status"] == "error" for e in llms) if available else None,

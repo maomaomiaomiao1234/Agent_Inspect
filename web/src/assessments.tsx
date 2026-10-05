@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Activity, ArrowDown, FlaskConical, Layers3, Plus, Users } from "lucide-react";
 import { api, DownloadLink } from "./api-client";
-import { RepositoryAssessments } from "./repository-assessments";
+import { RepositoryAssessments, type RepositoryReportIdentity } from "./repository-assessments";
 import { UsageValue, type Usage } from "./usage";
-import { AssessmentOverview, ResultReview, categoryLabels, type AssessmentSummary, type AssessmentResult } from "./assessment-report";
+import { AssessmentOverview, ResultReview, categoryLabels, type AssessmentResult } from "./assessment-report";
+import { AssessmentVisualizations, formatScore, jobScore, type BudgetCurve, type CaseFocus, type Quality } from "./assessment-visualizations";
+import { AssessmentHistory, assessmentStateLabels as stateLabel } from "./assessment-history";
 
 type Target = { id: string; repository_configured: boolean; managed: boolean; demo: boolean };
 type GeneratedSuite = { id: string; description: string; attempts?: number; budgets?: unknown[];
@@ -13,14 +16,6 @@ type Repository = { id: string; commit: string | null; snapshot_kind: string; fi
 type Plan = { id: string; suite: GeneratedSuite; estimated_requests: number; max_serial_deadline_seconds: number;
   dimensions: { id: string; label: string; cases: number }[]; gaps: { kind: string; name: string; reason: string }[];
   tool_candidates: { name: string; path: string; line: number; parameters: string[] }[]; limitations: string[] };
-type Quality = { summary?: AssessmentSummary; dimensions: { category: string; budget_id: string; observed: number; planned: number;
-  pass: number; fail: number; unknown: number; confirmed_pass_rate: number; possible_pass_rate: number;
-  p50_duration_ms: number | null; p95_duration_ms: number | null }[];
-  stability: { case_id: string; budget_id: string; status: string; observed: number; planned: number }[];
-  source_coverage: { kind: string; name: string; path: string; line: number; status: string }[];
-  evidence: { token_known_runs: number; token_partial_runs?: number; token_not_applicable_runs?: number;
-    planned_runs: number; unknown_required_checks: number; required_checks: number };
-  limitations: string[] };
 type Telemetry = { coverage: "complete" | "partial" | "unavailable"; llm_calls: number | null; tool_calls: number | null;
   llm_errors: number | null; tool_errors: number | null; llm_duration_ms: number | null; tool_duration_ms: number | null;
   models: { model: string; calls: number; tokens: { input: number | null; output: number | null; total: number | null };
@@ -28,16 +23,14 @@ type Telemetry = { coverage: "complete" | "partial" | "unavailable"; llm_calls: 
 type Job = {
   id: string; state: string; target_id: string; suite_id: string; planned: number; completed: number;
   commit: string | null; repository_id: string | null; error: string | null; demo: boolean;
-  curves: { budget: { id: string }; pass: number; fail: number; unknown: number; pass_rate: number;
-    mean_duration_ms: number | null; reported_total_tokens: number | null; reported_cost_usd: number | null; usage?: Usage }[];
+  curves: BudgetCurve[];
   results: (AssessmentResult & { source_evidence: Source[]; telemetry?: Telemetry; usage?: Usage })[];
   claims: Claim[]; limitations: string[];
   quality?: Quality; concurrency?: number;
   purpose?: string;
+  gateway?: { request_count: number; pending: number; usage: Usage; scope: string };
 };
 
-const stateLabel: Record<string, string> = { queued: "排队中", running: "执行中", completed: "已完成",
-  failed: "执行异常", cancelled: "已取消", interrupted: "服务重启中断" };
 const outcomeLabel: Record<string, string> = { pass: "通过", fail: "失败", inconclusive: "证据不足" };
 const claimLabel: Record<string, string> = { untested: "未测试", supported_for_cases: "这些案例支持声明",
   contradicted_by_cases: "有案例未满足声明", inconclusive: "证据不足" };
@@ -70,17 +63,45 @@ export function Assessments() {
   const [concurrency, setConcurrency] = useState(1);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [selected, setSelected] = useState("");
+  const [identities, setIdentities] = useState<Record<string, { name: string; purpose?: string }>>({});
+  const [selected, setSelected] = useState(() => new URLSearchParams(location.hash.split("?")[1]).get("id") || "");
   const [job, setJob] = useState<Job | null>(null);
   const [repository, setRepository] = useState<Repository | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingJobs, setLoadingJobs] = useState(true);
+  const [focus, setFocus] = useState<CaseFocus | null>(null);
+  const setup = useRef<HTMLElement>(null);
+  const report = useRef<HTMLElement>(null);
   const [readiness, setReadiness] = useState<{ usage_mode: string; collection: string; reason: string; model: string | null } | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
   const [comparison, setComparison] = useState<{ comparable: boolean; reasons: string[];
     changes: { case_id: string; from: string; to: string; regression: boolean }[] } | null>(null);
+  const receiveReports = useCallback((reports: RepositoryReportIdentity[]) => {
+    const names: Record<string, { name: string; purpose?: string }> = {};
+    for (const item of reports) {
+      const name = item.request.repository_url.replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
+      if (item.assessment_id) names[item.assessment_id] = { name };
+      for (const id of item.validation_ids || []) names[id] = { name, purpose: "adapter_validation" };
+    }
+    setIdentities(names);
+  }, []);
+
+  function openReport(id: string) {
+    setSelected(id); setFocus(null);
+    history.replaceState(null, "", `#/assessments?id=${encodeURIComponent(id)}`);
+    if (id === job?.id) { report.current?.scrollIntoView({ block: "start" }); report.current?.focus({ preventScroll: true }); }
+  }
+  useEffect(() => {
+    const change = () => { setSelected(new URLSearchParams(location.hash.split("?")[1]).get("id") || ""); setFocus(null); };
+    addEventListener("hashchange", change);
+    return () => removeEventListener("hashchange", change);
+  }, []);
+  useEffect(() => {
+    if (job) { report.current?.scrollIntoView({ block: "start" }); report.current?.focus({ preventScroll: true }); }
+  }, [job?.id]);
 
   useEffect(() => {
     api<Target[]>("/targets").then(items => { setTargets(items); setTarget(items[0]?.id || ""); }).catch(e => setError(e.message));
@@ -93,14 +114,16 @@ export function Assessments() {
       try {
         const items = await api<Job[]>("/assessments?limit=100");
         if (stopped) return;
-        setJobs(items);
+        setJobs(items); setLoadingJobs(false);
+        let selectedActive = false;
         if (selected) {
           const detail = await api<Job>(`/assessments/${encodeURIComponent(selected)}`);
           if (stopped) return;
           setJob(detail);
+          selectedActive = ["queued", "running"].includes(detail.state);
         }
-        if (items.some(j => ["queued", "running"].includes(j.state))) timer = setTimeout(load, 1500);
-      } catch (e) { if (!stopped) setError((e as Error).message); }
+        if (selectedActive || items.some(j => ["queued", "running"].includes(j.state))) timer = setTimeout(load, 1500);
+      } catch (e) { if (!stopped) { setLoadingJobs(false); setError((e as Error).message); } }
     }
     load();
     return () => { stopped = true; clearTimeout(timer); };
@@ -112,14 +135,101 @@ export function Assessments() {
     finally { setBusy(false); }
   }
 
-  return <>
-    <div className="page-heading"><div><div className="eyebrow">ACTIVE ASSESSMENT</div>
-      <h1>向 Agent 发任务，独立检查结果。</h1>
-      <p>选择已登记的服务和固定题集，观察多轮任务、会话隔离与不同预算下的表现。</p>
-    </div></div>
+  const displayJobs = jobs.map(j => ({ ...j, target_label: identities[j.id]?.name, purpose: j.purpose || identities[j.id]?.purpose }));
+  const formalJobs = displayJobs.filter(j => !j.demo && j.purpose !== "adapter_validation");
+  return <div className="assessment-page">
+    <div className="page-heading assessment-page-heading"><div><div className="eyebrow"><FlaskConical size={14} /> AGENT EVALUATION</div>
+      <h1>看清 Agent 的能力与评分。</h1>
+      <p>从题集得分到逐项验收，了解能力优势、薄弱维度与每个结论的依据。</p>
+    </div><button className="primary" onClick={() => { setup.current?.scrollIntoView({ block: "start" }); setup.current?.focus({ preventScroll: true }); }}><Plus size={16} />新建评测</button></div>
+    <div className="assessment-workspace-stats" aria-label="评测工作区概览">
+      <div><Users size={18} /><span>已评测 Agent</span><strong>{new Set(formalJobs.filter(j => j.completed > 0).map(j => j.target_id)).size}</strong><small>正式评测目标</small></div>
+      <div><Layers3 size={18} /><span>正式评测记录</span><strong>{formalJobs.length}</strong><small>最近 100 条记录中</small></div>
+      <div><Activity size={18} /><span>执行中 / 排队中</span><strong>{jobs.filter(j => ["queued", "running"].includes(j.state)).length}</strong><small>评测进度自动更新</small></div>
+      <div><FlaskConical size={18} /><span>控制示例 / 接入检查</span><strong>{jobs.length - formalJobs.length}</strong><small>与正式能力评测区分</small></div>
+    </div>
     {error && <div className="error-banner" role="alert">{error}</div>}
-    <RepositoryAssessments onOpen={id => { setSelected(id); setRefresh(v => v + 1); }} />
-    <section className="standalone-panel assessment-guide">
+    <AssessmentHistory jobs={displayJobs} selected={selected} loading={loadingJobs} onOpen={openReport} onRefresh={() => setRefresh(x => x + 1)} />
+    {selected && !job && !error && <div className="assessment-loading" role="status">正在读取评测报告…</div>}
+    {job && <section ref={report} tabIndex={-1} className="standalone-panel assessment-guide assessment-detail">
+      <div className="document-result-heading"><h2>评测详情 · {identities[job.id]?.name || job.target_id}</h2><div className="scenario-actions">
+        {["queued", "running"].includes(job.state) && <button disabled={busy} onClick={() => action(async () => {
+          await api(`/assessments/${job.id}/cancel`, { method: "POST" }); setRefresh(x => x + 1);
+        })}>取消评测</button>}
+        <DownloadLink path={`/assessments/${job.id}/export`}>导出评测报告</DownloadLink>
+        <DownloadLink path={`/assessments/${job.id}/export?format=json`}>导出评测 JSON</DownloadLink>
+        <DownloadLink path={`/assessments/${job.id}/export?format=bundle`}>导出证据包</DownloadLink>
+      </div></div>
+      <p>{stateLabel[job.state]} · {job.completed}/{job.planned} · 源码提交：<code>{job.commit || "未知"}</code></p>
+      {identities[job.id] && <p className="scenario-note">目标 ID：<code>{job.target_id}</code> · 题集：{job.suite_id}</p>}
+      {job.gateway && <section aria-label="模型网关记录"><h3>模型网关记录</h3>
+        <p>已持久化 {job.gateway.request_count} 次请求 · 待结束 {job.gateway.pending} 次 ·
+          已保存 Token <UsageValue usage={job.gateway.usage} field="total_tokens" /></p>
+        <p>仅统计经过网关的请求，案例统计使用网关记录，目标自报记录保留在证据包中。目标中断或服务重启后仍可查看已保存用量。</p>
+      </section>}
+      {job.purpose === "adapter_validation" && <p className="scenario-note">这是适配器接入检查，验证原入口调用和协议；本题及用量不计入正式能力评测。</p>}
+      {job.error && <p role="alert">执行错误：{job.error}</p>}
+      <AssessmentVisualizations key={`visuals-${job.id}`} job={job} onInspect={setFocus} />
+      {job.quality?.summary && <AssessmentOverview summary={job.quality.summary} demo={job.demo} />}
+      <ResultReview key={`review-${job.id}`} results={job.results} focus={focus} onClearFocus={() => setFocus(null)} />
+      <details className="assessment-technical"><summary>预算与维度 · 原始统计 <ArrowDown size={14} /></summary>
+      <h3>预算与结果</h3>
+      <div className="assessment-table"><table><thead><tr><th>预算</th><th>通过</th><th>失败</th><th>未知</th><th>通过率</th><th>平均观测耗时</th><th>自报 Token</th></tr></thead>
+        <tbody>{job.curves.map(c => <tr key={c.budget.id}><td>{c.budget.id}</td><td>{c.pass}</td><td>{c.fail}</td><td>{c.unknown}</td>
+          <td>{c.pass_rate}%</td><td>{c.mean_duration_ms == null ? "未知" : `${(c.mean_duration_ms / 1000).toFixed(2)} 秒`}</td>
+          <td><UsageValue usage={c.usage} field="total_tokens" fallback={c.reported_total_tokens} /></td></tr>)}</tbody></table></div>
+      <p className="scenario-note">未知和未完成的案例保留在通过率分母中。Token：数字表示完整汇总，≥ 表示已观测下界；离线校准不适用，未上报保持未知。鼠标停留可查看来源与原因。</p>
+      {job.quality && <section aria-label="维度覆盖与质量">
+        <h3>维度覆盖与质量</h3>
+        <p>案例并发上限 {job.concurrency ?? 1}；Token 完整 {job.quality.evidence.token_known_runs}/{job.quality.evidence.planned_runs} 次，
+          部分 {job.quality.evidence.token_partial_runs ?? 0} 次，离线不适用 {job.quality.evidence.token_not_applicable_runs ?? 0} 次；
+          必需检查未知 {job.quality.evidence.unknown_required_checks}/{job.quality.evidence.required_checks} 项。</p>
+        <div className="assessment-table"><table><thead><tr><th>维度 / 预算</th><th>完成 / 计划</th><th>通过 / 失败 / 未知</th><th>通过率范围</th><th>p50 / p95 ms</th></tr></thead>
+          <tbody>{job.quality.dimensions.map(d => <tr key={`${d.category}-${d.budget_id}`}>
+            <td>{categoryLabels[d.category] || d.category} / {d.budget_id}</td><td>{d.observed} / {d.planned}</td><td>{d.pass} / {d.fail} / {d.unknown}</td>
+            <td>{d.confirmed_pass_rate}%–{d.possible_pass_rate}%</td><td>{d.p50_duration_ms ?? "未知"} / {d.p95_duration_ms ?? "未知"}</td>
+          </tr>)}</tbody></table></div>
+        <details><summary>重复稳定性</summary><ul>{job.quality.stability.map(s => <li key={`${s.case_id}-${s.budget_id}`}>
+          {s.case_id} / {s.budget_id}：{qualityLabel[s.status] || s.status}（{s.observed}/{s.planned}）</li>)}</ul></details>
+        <details><summary>源码覆盖与漏测</summary><ul>{job.quality.source_coverage.map((s, i) => <li key={i}>
+          {s.name}：{qualityLabel[s.status] || s.status} · <SourceLink source={s} /></li>)}</ul></details>
+        <p className="scenario-note">通过率范围表示未知项的最好与最坏情况，不是统计置信区间或总体能力分数。重复少于两次无法判断稳定性。</p>
+      </section>}
+      </details>
+      <details className="assessment-technical"><summary>模型与工具调用 · 资源明细</summary>
+      <p className="scenario-note">内部记录由目标自报。≥ 表示部分记录的可见下界；未知表示未采集。
+        工具计数包含 final_answer；调用耗时之和可能包含并发重叠。点击“查看对话和验收”可查看逐次调用的参数、结果和状态。</p>
+      <div className="assessment-table"><table aria-label="模型与工具调用统计"><thead><tr>
+        <th>案例 / 预算 / 次数</th><th>输入 Token</th><th>输出 Token</th><th>总 Token</th>
+        <th>模型调用</th><th>工具调用</th><th>模型错误 / 工具错误</th><th>模型耗时 / 工具耗时</th><th>覆盖范围</th>
+      </tr></thead><tbody>{job.results.map(r => <tr key={r.run_id}>
+        <td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td><UsageValue usage={r.usage} field="input_tokens" /></td>
+        <td><UsageValue usage={r.usage} field="output_tokens" /></td><td><UsageValue usage={r.usage} field="total_tokens" /></td>
+        <td>{callCount(r.telemetry?.llm_calls, r.telemetry)}</td><td>{callCount(r.telemetry?.tool_calls, r.telemetry)}</td>
+        <td>{callCount(r.telemetry?.llm_errors, r.telemetry)} / {callCount(r.telemetry?.tool_errors, r.telemetry)}</td>
+        <td>{callTime(r.telemetry?.llm_duration_ms, r.telemetry)} / {callTime(r.telemetry?.tool_duration_ms, r.telemetry)}</td>
+        <td>{r.telemetry?.coverage === "complete" ? "目标声明完整" : r.telemetry?.coverage === "partial" ? "部分" : "未采集"}</td>
+      </tr>)}</tbody></table></div>
+      {job.results.some(r => !!r.telemetry?.models.length) && <details><summary>按模型查看用量</summary>
+        <ul>{job.results.flatMap(r => (r.telemetry?.models || []).map(m => <li key={`${r.run_id}-${m.model}`}>
+          {r.case_id} / {r.budget_id} / {r.attempt} · {m.model} · {callCount(m.calls, r.telemetry)} 次 ·
+          输入 <UsageValue usage={m.usage} field="input_tokens" fallback={m.tokens.input} /> / 输出 <UsageValue usage={m.usage} field="output_tokens" fallback={m.tokens.output} /> Token · {callTime(m.duration_ms, r.telemetry)}
+        </li>))}</ul>
+      </details>}
+      <details><summary>Token 采集状态与原因</summary><ul>{job.results.flatMap(r => Object.entries(r.usage?.fields || {})
+        .filter(([key]) => ["input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens", "cost_usd"].includes(key))
+        .map(([key, field]) => <li key={`${r.run_id}-${key}`}>{r.case_id} / {r.budget_id} · {key}：
+          <UsageValue usage={r.usage} field={key} /> · {field.source} · {field.reason}</li>))}</ul></details>
+      </details>
+      <div className="assessment-table"><table><thead><tr><th>案例 / 预算 / 次数</th><th>验收</th><th>执行</th><th>源码线索</th><th>证据</th></tr></thead>
+        <tbody>{job.results.map(r => <tr key={r.run_id}><td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td>{outcomeLabel[r.outcome]}</td>
+          <td>{r.execution_state}{r.error ? ` · ${r.error}` : ""}</td><td>{r.source_evidence.map((s, i) => <div key={i}><SourceLink source={s} /></div>)}</td>
+          <td><a href={`#/runs/${r.run_id}`}>查看对话和验收</a></td></tr>)}</tbody></table></div>
+      {!!job.claims.length && <details><summary>能力声明与测试对应</summary><ul>{job.claims.map(c => <li key={c.id}>
+        {c.capability} · {claimLabel[c.assessment_status || "untested"]} · <SourceLink source={c} /></li>)}</ul></details>}
+      <details><summary>评测范围与限制</summary><ul>{job.limitations.map((v, i) => <li key={i}>{v}</li>)}</ul></details>
+    </section>}
+    <section ref={setup} tabIndex={-1} className="standalone-panel assessment-guide assessment-setup">
       <h2>新建评测</h2>
       {!targets.length ? <p>尚未登记目标。管理员启动服务时使用 <code>--targets targets.json</code> 配置服务地址；README 提供可直接运行的控制 Agent。</p> : <>
         <div className="assessment-controls">
@@ -139,7 +249,7 @@ export function Assessments() {
           <button className="primary" disabled={busy || !suite || !target} onClick={() => action(async () => {
             const created = await api<Job>("/assessments", { method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ target_id: target, suite }) });
-            setSelected(created.id); setRefresh(x => x + 1);
+            openReport(created.id); setRefresh(x => x + 1);
           })}>开始评测{suiteName ? ` · ${suiteName}` : ""}</button>
           <button disabled={busy || !targets.find(t => t.id === target)?.repository_configured} onClick={() => action(async () => {
             setRepository(await api<Repository>(`/targets/${encodeURIComponent(target)}/repository-profile`, { method: "POST" }));
@@ -224,93 +334,21 @@ export function Assessments() {
       <ul>{repository.claims.slice(0, 30).map(c => <li key={c.id}><SourceLink source={c} /> · {c.capability} · <code>{c.id}</code><br />{c.snippet}</li>)}</ul>
       {repository.claims.length > 30 && <p>这里只展示前 30 条；完整档案保存在 API 中。</p>}
     </section>}
-    <section className="standalone-panel assessment-guide">
-      <div className="document-result-heading"><h2>评测任务</h2><button onClick={() => setRefresh(x => x + 1)}>刷新评测</button></div>
-      {!jobs.length ? <p>尚无评测记录。先用 examples/assessment/suite.json 跑通流程。</p> : <div className="assessment-table"><table>
-        <thead><tr><th>题集 / Agent</th><th>状态</th><th>案例进度</th><th>任务 ID</th></tr></thead>
-        <tbody>{jobs.map(j => <tr key={j.id}><td><button className="text-button" onClick={() => setSelected(j.id)}>{j.suite_id} / {j.target_id}{j.demo ? " · 示例" : ""}{j.purpose === "adapter_validation" ? " · 接入检查" : ""}</button></td>
-          <td>{stateLabel[j.state] || j.state}</td><td>{j.completed}/{j.planned}</td><td className="mono">{j.id.slice(-12)}</td></tr>)}</tbody>
-      </table></div>}
-    </section>
-    {job && <section className="standalone-panel assessment-guide">
-      <div className="document-result-heading"><h2>评测详情 · {job.target_id}</h2><div className="scenario-actions">
-        {["queued", "running"].includes(job.state) && <button disabled={busy} onClick={() => action(async () => {
-          await api(`/assessments/${job.id}/cancel`, { method: "POST" }); setRefresh(x => x + 1);
-        })}>取消评测</button>}
-        <DownloadLink path={`/assessments/${job.id}/export`}>导出评测报告</DownloadLink>
-        <DownloadLink path={`/assessments/${job.id}/export?format=json`}>导出评测 JSON</DownloadLink>
-        <DownloadLink path={`/assessments/${job.id}/export?format=bundle`}>导出证据包</DownloadLink>
-      </div></div>
-      <p>{stateLabel[job.state]} · {job.completed}/{job.planned} · 源码提交：<code>{job.commit || "未知"}</code></p>
-      {job.purpose === "adapter_validation" && <p className="scenario-note">这是适配器接入检查，验证原入口调用和协议；本题及用量不计入正式能力评测。</p>}
-      {job.error && <p role="alert">执行错误：{job.error}</p>}
-      {job.quality?.summary && <AssessmentOverview summary={job.quality.summary} demo={job.demo} />}
-      <ResultReview key={job.id} results={job.results} />
-      <h3>预算与结果</h3>
-      <div className="assessment-table"><table><thead><tr><th>预算</th><th>通过</th><th>失败</th><th>未知</th><th>通过率</th><th>平均观测耗时</th><th>自报 Token</th></tr></thead>
-        <tbody>{job.curves.map(c => <tr key={c.budget.id}><td>{c.budget.id}</td><td>{c.pass}</td><td>{c.fail}</td><td>{c.unknown}</td>
-          <td>{c.pass_rate}%</td><td>{c.mean_duration_ms == null ? "未知" : `${(c.mean_duration_ms / 1000).toFixed(2)} 秒`}</td>
-          <td><UsageValue usage={c.usage} field="total_tokens" fallback={c.reported_total_tokens} /></td></tr>)}</tbody></table></div>
-      <p className="scenario-note">未知和未完成的案例保留在通过率分母中。Token：数字表示完整汇总，≥ 表示已观测下界；离线校准不适用，未上报保持未知。鼠标停留可查看来源与原因。</p>
-      {job.quality && <section aria-label="维度覆盖与质量">
-        <h3>维度覆盖与质量</h3>
-        <p>案例并发上限 {job.concurrency ?? 1}；Token 完整 {job.quality.evidence.token_known_runs}/{job.quality.evidence.planned_runs} 次，
-          部分 {job.quality.evidence.token_partial_runs ?? 0} 次，离线不适用 {job.quality.evidence.token_not_applicable_runs ?? 0} 次；
-          必需检查未知 {job.quality.evidence.unknown_required_checks}/{job.quality.evidence.required_checks} 项。</p>
-        <div className="assessment-table"><table><thead><tr><th>维度 / 预算</th><th>完成 / 计划</th><th>通过 / 失败 / 未知</th><th>通过率范围</th><th>p50 / p95 ms</th></tr></thead>
-          <tbody>{job.quality.dimensions.map(d => <tr key={`${d.category}-${d.budget_id}`}>
-            <td>{categoryLabels[d.category] || d.category} / {d.budget_id}</td><td>{d.observed} / {d.planned}</td><td>{d.pass} / {d.fail} / {d.unknown}</td>
-            <td>{d.confirmed_pass_rate}%–{d.possible_pass_rate}%</td><td>{d.p50_duration_ms ?? "未知"} / {d.p95_duration_ms ?? "未知"}</td>
-          </tr>)}</tbody></table></div>
-        <details><summary>重复稳定性</summary><ul>{job.quality.stability.map(s => <li key={`${s.case_id}-${s.budget_id}`}>
-          {s.case_id} / {s.budget_id}：{qualityLabel[s.status] || s.status}（{s.observed}/{s.planned}）</li>)}</ul></details>
-        <details><summary>源码覆盖与漏测</summary><ul>{job.quality.source_coverage.map((s, i) => <li key={i}>
-          {s.name}：{qualityLabel[s.status] || s.status} · <SourceLink source={s} /></li>)}</ul></details>
-        <p className="scenario-note">通过率范围表示未知项的最好与最坏情况，不是统计置信区间或总体能力分数。重复少于两次无法判断稳定性。</p>
-      </section>}
-      <details className="assessment-technical"><summary>模型与工具调用 · 资源明细</summary>
-      <p className="scenario-note">内部记录由目标自报。≥ 表示部分记录的可见下界；未知表示未采集。
-        工具计数包含 final_answer；调用耗时之和可能包含并发重叠。点击“查看对话和验收”可查看逐次调用的参数、结果和状态。</p>
-      <div className="assessment-table"><table aria-label="模型与工具调用统计"><thead><tr>
-        <th>案例 / 预算 / 次数</th><th>输入 Token</th><th>输出 Token</th><th>总 Token</th>
-        <th>模型调用</th><th>工具调用</th><th>模型错误 / 工具错误</th><th>模型耗时 / 工具耗时</th><th>覆盖范围</th>
-      </tr></thead><tbody>{job.results.map(r => <tr key={r.run_id}>
-        <td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td><UsageValue usage={r.usage} field="input_tokens" /></td>
-        <td><UsageValue usage={r.usage} field="output_tokens" /></td><td><UsageValue usage={r.usage} field="total_tokens" /></td>
-        <td>{callCount(r.telemetry?.llm_calls, r.telemetry)}</td><td>{callCount(r.telemetry?.tool_calls, r.telemetry)}</td>
-        <td>{callCount(r.telemetry?.llm_errors, r.telemetry)} / {callCount(r.telemetry?.tool_errors, r.telemetry)}</td>
-        <td>{callTime(r.telemetry?.llm_duration_ms, r.telemetry)} / {callTime(r.telemetry?.tool_duration_ms, r.telemetry)}</td>
-        <td>{r.telemetry?.coverage === "complete" ? "目标声明完整" : r.telemetry?.coverage === "partial" ? "部分" : "未采集"}</td>
-      </tr>)}</tbody></table></div>
-      {job.results.some(r => !!r.telemetry?.models.length) && <details><summary>按模型查看用量</summary>
-        <ul>{job.results.flatMap(r => (r.telemetry?.models || []).map(m => <li key={`${r.run_id}-${m.model}`}>
-          {r.case_id} / {r.budget_id} / {r.attempt} · {m.model} · {callCount(m.calls, r.telemetry)} 次 ·
-          输入 <UsageValue usage={m.usage} field="input_tokens" fallback={m.tokens.input} /> / 输出 <UsageValue usage={m.usage} field="output_tokens" fallback={m.tokens.output} /> Token · {callTime(m.duration_ms, r.telemetry)}
-        </li>))}</ul>
-      </details>}
-      <details><summary>Token 采集状态与原因</summary><ul>{job.results.flatMap(r => Object.entries(r.usage?.fields || {})
-        .filter(([key]) => ["input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens", "cost_usd"].includes(key))
-        .map(([key, field]) => <li key={`${r.run_id}-${key}`}>{r.case_id} / {r.budget_id} · {key}：
-          <UsageValue usage={r.usage} field={key} /> · {field.source} · {field.reason}</li>))}</ul></details>
-      </details>
-      <div className="assessment-table"><table><thead><tr><th>案例 / 预算 / 次数</th><th>验收</th><th>执行</th><th>源码线索</th><th>证据</th></tr></thead>
-        <tbody>{job.results.map(r => <tr key={r.run_id}><td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td>{outcomeLabel[r.outcome]}</td>
-          <td>{r.execution_state}{r.error ? ` · ${r.error}` : ""}</td><td>{r.source_evidence.map((s, i) => <div key={i}><SourceLink source={s} /></div>)}</td>
-          <td><a href={`#/runs/${r.run_id}`}>查看对话和验收</a></td></tr>)}</tbody></table></div>
-      {!!job.claims.length && <details><summary>能力声明与测试对应</summary><ul>{job.claims.map(c => <li key={c.id}>
-        {c.capability} · {claimLabel[c.assessment_status || "untested"]} · <SourceLink source={c} /></li>)}</ul></details>}
-      <details><summary>评测范围与限制</summary><ul>{job.limitations.map((v, i) => <li key={i}>{v}</li>)}</ul></details>
-    </section>}
-    {jobs.length >= 2 && <section className="standalone-panel assessment-guide"><h2>版本回归比较</h2>
+    <RepositoryAssessments onReports={receiveReports} onOpen={id => { openReport(id); setRefresh(v => v + 1); }} />
+    {jobs.length >= 2 && <section className="standalone-panel assessment-guide assessment-comparison"><h2>版本回归比较</h2>
+      <p>用相同题集对比两次评测，查看能力改善与回归。可比性由评审服务检查。</p>
       <div className="assessment-controls">{[[left, setLeft, "基线评测"], [right, setRight, "新版评测"]].map(([value, setter, label]) =>
-        <label key={label as string}>{label as string}<select aria-label={label as string} value={value as string} onChange={e => (setter as (value: string) => void)(e.target.value)}>
-          <option value="">选择评测</option>{jobs.map(j => <option key={j.id} value={j.id}>{j.target_id} · {j.id.slice(-8)} · {stateLabel[j.state]}</option>)}</select></label>)}
-        <button disabled={busy || !left || !right} onClick={() => action(async () => setComparison(await api("/assessment-comparisons", {
+        <label key={label as string}>{label as string}<select aria-label={label as string} value={value as string} onChange={e => { (setter as (value: string) => void)(e.target.value); setComparison(null); }}>
+          <option value="">选择评测</option>{displayJobs.map(j => <option key={j.id} value={j.id}>{j.target_label || j.target_id} · {j.id.slice(-8)} · {stateLabel[j.state]}{j.demo ? " · 示例" : j.purpose === "adapter_validation" ? " · 接入检查" : ""}</option>)}</select></label>)}
+        <button disabled={busy || !left || !right || left === right} onClick={() => action(async () => setComparison(await api("/assessment-comparisons", {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ left_id: left, right_id: right }),
         })))}>比较版本</button>
       </div>{comparison && <div role="status">{!comparison.comparable ? <p>无法比较：{comparison.reasons.join("；")}</p>
-        : comparison.changes.length ? <ul>{comparison.changes.map((c, i) => <li key={i}>{c.case_id}：{outcomeLabel[c.from]} → {outcomeLabel[c.to]}{c.regression ? " · 发现回归" : ""}</li>)}</ul>
-          : <p>这些案例的验收结论没有变化。</p>}</div>}
+        : <><div className="comparison-score-grid">{[left, right].map((id, i) => { const item = displayJobs.find(j => j.id === id); const score = item ? jobScore(item) : null;
+          return <div key={id}><span>{i ? "新版题集得分" : "基线题集得分"}{item?.purpose === "adapter_validation" ? " · 接入检查" : item?.demo ? " · 校准" : ""}</span><strong>{score === null ? "—" : formatScore(score)}<small> / 100</small></strong><p>{item?.target_label || item?.target_id}</p></div>; })}
+          <div><span>发现回归</span><strong>{comparison.changes.filter(c => c.regression).length}<small> 次结果</small></strong><p>验收结论发生退步</p></div></div>
+          {comparison.changes.length ? <ul>{comparison.changes.map((c, i) => <li key={i}>{c.case_id}：{outcomeLabel[c.from]} → {outcomeLabel[c.to]}{c.regression ? " · 发现回归" : ""}</li>)}</ul>
+          : <p>这些案例的验收结论没有变化。</p>}</>}</div>}
     </section>}
-  </>;
+  </div>;
 }

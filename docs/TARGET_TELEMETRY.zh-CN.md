@@ -91,7 +91,7 @@ smolagents 示例已对模型后端、三个业务工具和 `final_answer` 加�
 
 目标 `/health` 可声明 `usage_mode` 和 `usage_collection`（`call_usage` / `aggregate_usage` / `not_applicable`），网页「检查 Token 采集」调用 `GET /api/targets/{id}/telemetry-readiness`；只检查已登记服务的健康接口，不执行任务或启动容器。采集声明不证明供应商实际返回了所有字段，每次响应仍单独判断完整性。未配置健康接口、未启动 Docker 目标或未声明采集时保留未知。
 
-当前包含通用 SDK/HTTP 包装，仍依赖目标采集和自报；尚未包含受控模型网关。评审模型 Token 与被测 Agent 用量分别保存；费用未知时不会按模型价格伪造账单。
+当前包含通用 SDK/HTTP 包装，仍依赖目标采集和自报；Python 自动适配还可选择 [受控模型网关试点](MODEL_GATEWAY.zh-CN.md)，将模型证据保存到目标进程外。评审模型 Token 与被测 Agent 用量分别保存；费用未知时不会按模型价格伪造账单。
 
 后续新增的 [Python 自动适配](AUTO_ADAPTATION.zh-CN.md) 提供固定容器运行模板，可观察已配置模型端点的 httpx JSON/SSE 请求，以及显式包装的原生模型/工具调用；这不等同于全框架遥测或受控模型网关。其可选 `adapter_evidence` 保存源文件路径、符号、哈希、入口是否被观察及有界异常类型。自动适配任务逐轮校验这些自报证据，失败时保留已有用量并停止确认能力通过。
 

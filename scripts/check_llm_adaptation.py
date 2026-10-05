@@ -73,10 +73,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--stream", action="store_true", help="Exercise incremental provider SSE in the real container")
+    parser.add_argument("--gateway", action="store_true", help="Route target model calls through the persistent gateway")
+    parser.add_argument("--target-crash", action="store_true", help="Exit the target after its formal model request; requires --gateway")
     args = parser.parse_args()
+    if args.target_crash and not args.gateway:
+        parser.error("--target-crash requires --gateway")
     data_dir = args.data_dir or Path(tempfile.mkdtemp(prefix="agent-inspect-auto-adapt-validation-"))
     counters = {"generation": 0, "target": 0}
     native = STREAM_NATIVE if args.stream else NATIVE
+    if args.target_crash:
+        native = native.replace('        if "a" in request["input"]:',
+            '        if request["input"].get("crash"):\n            import os\n            os._exit(23)\n        if "a" in request["input"]:')
     definition = next(n for n in ast.walk(ast.parse(native)) if isinstance(n, ast.FunctionDef) and n.name == "run")
     proposal = {"supported": True, "entry": {"path": "native_agent.py", "symbol": "NativeAgent.run", "line": definition.lineno},
                 "bridge_code": BRIDGE, "limitations": ["Synthetic validation fixture, not third-party capability scores."]}
@@ -127,8 +134,12 @@ def main():
                 "AGENT_REVIEW_TARGET_API_URL": f"http://host.docker.internal:{server.server_port}/v1",
                 "AGENT_REVIEW_TARGET_MODEL": "synthetic-target-model", "AGENT_REVIEW_TARGET_TOKEN": "synthetic-target-key",
                 "AGENT_REVIEW_AUTO_ADAPT": "true"}
+            if args.gateway:
+                settings.update(AGENT_REVIEW_GATEWAY_HOST="0.0.0.0",
+                                AGENT_REVIEW_GATEWAY_ADVERTISE_HOST="host.docker.internal",
+                                AGENT_REVIEW_TARGET_API_URL=f"http://127.0.0.1:{server.server_port}/v1")
             suite = AssessmentSuite.model_validate({"id": "native-addition", "cases": [{"id": "sum",
-                "turns": [{"prompt": "Compute 12 + 7. Return JSON with answer."}], "input": {"a": 12, "b": 7},
+                "turns": [{"prompt": "Compute 12 + 7. Return JSON with answer."}], "input": {"a": 12, "b": 7, "crash": args.target_crash},
                 "profile": {"profile_version": "1", "id": "native-addition", "rules": [
                     {"id": "correct", "op": "equals", "path": "/output/answer", "value": 19},
                     {"id": "calculator", "op": "tool_required", "value": "calculator", "dimension": "behavior"}]}}],
@@ -137,7 +148,7 @@ def main():
                 manager = AssessmentManager(Store(data_dir), {})
                 repositories = RepositoryManager(manager, enabled=True)
                 job = repositories.db.create(RepositoryAssessmentInput(repository_url="https://github.com/example/synthetic-native-agent",
-                    backend="auto", suite=suite, adaptation={"max_repairs": 0}))
+                    backend="auto", suite=suite, model_gateway=args.gateway, adaptation={"max_repairs": 0}))
                 result = repositories.run(job["id"])
                 bundle = repositories.bundle(job["id"])
                 destination = data_dir / "validation.bundle.json"
@@ -145,23 +156,34 @@ def main():
                 assert result["state"] == "completed", result["error"]
                 assert result["cleanup"] == "completed"
                 row = bundle["assessment"]["job"]["results"][0]
-                assert row["outcome"] == "pass", row
+                assert row["outcome"] == ("inconclusive" if args.target_crash else "pass"), row
                 assert row["usage"]["fields"]["total_tokens"]["value"] == 15
                 turns = bundle["assessment"]["runs"][0]["bundle"]["trace"]["artifacts"]["assessment"]["turns"]
-                assert turns[0]["adapter_evidence"]["observed"]
+                if not args.target_crash:
+                    assert turns[0]["adapter_evidence"]["observed"]
+                else:
+                    assert row["execution_state"] == "error" and turns[0]["trace"] is None
                 assert row["usage"]["fields"]["cache_read_tokens"]["value"] == 6
                 assert row["usage"]["fields"]["reasoning_tokens"]["value"] == 2
-                model_call = next(e for e in turns[0]["trace"]["events"] if e["kind"] == "llm")
+                model_call = next(e for e in turns[0]["gateway" if args.target_crash else "trace"]["events"] if e["kind"] == "llm")
                 assert model_call["context"]["assessment_id"] == result["assessment_id"]
                 assert model_call["context"]["case_id"] == "sum"
                 assert model_call["context"]["budget_id"] == "default"
                 assert model_call["context"]["provider_request_id"].startswith("synthetic-")
                 assert counters == {"generation": 1, "target": 2}
+                if args.gateway:
+                    assert bundle["assessment"]["gateway"]["request_count"] == 1
+                    assert row["usage"]["fields"]["total_tokens"]["source"] == "gateway"
+                    canonical_calls = [e for e in bundle["assessment"]["runs"][0]["bundle"]["trace"]["events"] if e["kind"] == "llm"]
+                    assert len(canonical_calls) == 1 and canonical_calls[0]["provenance"] == "host_observed"
+                    assert model_call["context"]["gateway_request_id"] == canonical_calls[0]["id"]
                 for value in ("synthetic-generator-key", "synthetic-target-key"):
                     assert value not in destination.read_text()
                 print(canonical({"state": result["state"], "cleanup": result["cleanup"], "outcome": row["outcome"],
-                    "native_entry_observed": True, "target_tokens": row["usage"]["fields"]["total_tokens"],
-                    "requests": counters, "stream": args.stream, "evidence": str(destination), "job_id": job["id"]}))
+                    "native_entry_observed": None if args.target_crash else True,
+                    "target_crash": args.target_crash, "target_tokens": row["usage"]["fields"]["total_tokens"],
+                    "requests": counters, "stream": args.stream, "gateway": args.gateway,
+                    "evidence": str(destination), "job_id": job["id"]}))
     finally:
         if repositories:
             repositories.close()

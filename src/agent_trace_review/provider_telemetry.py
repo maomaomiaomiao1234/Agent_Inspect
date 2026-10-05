@@ -305,6 +305,9 @@ class BodyObserver:
         identity = _identity(response.headers.get("x-request-id"))
         if identity:
             capture.event["context"]["provider_request_id"] = identity
+        gateway_id = _identity(response.headers.get("x-agent-review-gateway-request-id"))
+        if gateway_id:
+            capture.event["context"]["gateway_request_id"] = gateway_id
         self.decoder = io.IncrementalNewlineDecoder(codecs.getincrementaldecoder("utf-8")("replace"), True)
         self.buffer, self.data = "", ""
         self.discard = False

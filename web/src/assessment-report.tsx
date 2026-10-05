@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { CaseFocus } from "./assessment-visualizations";
 
 export const categoryLabels: Record<string, string> = {
   structured_output: "结构化输出", instruction_following: "指令遵循", retrieval: "上下文检索与引用",
@@ -38,18 +39,29 @@ export function AssessmentOverview({ summary, demo }: { summary: AssessmentSumma
   </section>;
 }
 
-export function ResultReview({ results }: { results: AssessmentResult[] }) {
+export function ResultReview({ results, focus, onClearFocus }: { results: AssessmentResult[]; focus?: CaseFocus | null; onClearFocus?: () => void }) {
   const [filter, setFilter] = useState("problems");
   const [search, setSearch] = useState("");
+  const section = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (focus) {
+      setFilter("all"); setSearch("");
+      section.current?.scrollIntoView({ block: "start" });
+      section.current?.focus({ preventScroll: true });
+    }
+  }, [focus]);
   const filtered = results.filter(r => {
     const matches = filter === "all" || (filter === "problems" ? r.outcome !== "pass"
       : filter === "execution" ? r.execution_state !== "completed" : r.outcome === filter);
     const text = `${r.case_id} ${r.description || ""} ${categoryLabels[r.category || ""] || ""} ${r.budget_id}`.toLowerCase();
-    return matches && text.includes(search.trim().toLowerCase());
+    return matches && text.includes(search.trim().toLowerCase())
+      && (!focus || r.category === focus.category && (!focus.budget || r.budget_id === focus.budget));
   });
-  return <section className="assessment-review" aria-label="案例诊断">
+  return <section ref={section} tabIndex={-1} className="assessment-review" aria-label="案例诊断">
     <h3>案例诊断</h3>
     <p>先处理未通过与证据不足的案例。每个结论都可以追溯到对话和验收记录。</p>
+    {focus && <div className="case-focus"><span>正在查看：{categoryLabels[focus.category] || focus.category}{focus.budget ? ` · ${focus.budget}` : " · 全部预算"}</span>
+      <button onClick={onClearFocus}>清除维度筛选</button></div>}
     <div className="assessment-controls">
       <label>筛选结果<select value={filter} onChange={e => setFilter(e.target.value)}>
         <option value="problems">需要关注</option><option value="all">全部结果</option>

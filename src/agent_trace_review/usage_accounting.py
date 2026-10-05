@@ -12,7 +12,7 @@ class UsageField(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False, strict=True)
     value: int | float | None = Field(default=None, ge=0)
     status: Literal["complete", "partial", "unknown", "not_applicable"]
-    source: Literal["aggregate", "calls", "mixed", "none", "offline"]
+    source: Literal["aggregate", "calls", "gateway", "mixed", "none", "offline"]
     reason: str = Field(min_length=1, max_length=1000)
 
     @model_validator(mode="after")
@@ -24,7 +24,7 @@ class UsageField(BaseModel):
 
 class UsageSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    provenance: Literal["target_reported", "exporter_reported"] = "target_reported"
+    provenance: Literal["target_reported", "exporter_reported", "gateway_reported", "mixed"] = "target_reported"
     fields: dict[Literal["input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cost_usd",
                          "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens"], UsageField]
 
@@ -57,6 +57,14 @@ def _field(value, status, source, reason):
 
 
 def turn_usage(turn):
+    if turn.get("gateway") is not None:
+        usage = turn_usage({"usage_mode": "model", "trace": {"coverage": "partial", "events": turn["gateway"]["events"]}})
+        usage["provenance"] = "gateway_reported"
+        for field in usage["fields"].values():
+            if field["value"] is not None:
+                field["source"] = "gateway"
+            field["reason"] = "网关持久化的供应商用量；仅覆盖经过网关的请求，不与目标自报相加。"
+        return usage
     fields = {}
     trace = turn.get("trace") or {}
     calls = [e for e in trace.get("events", []) if e["kind"] == "llm"]
@@ -112,7 +120,9 @@ def combine_usage(summaries, *, complete=True, expected=None):
             if items and not applicable:
                 reason = "执行未完成，未观测轮次的模式和用量未知。"
             fields[key] = _field(None, "unknown", "none", reason)
-    return {"provenance": "target_reported", "fields": fields}
+    provenance = {summary.get("provenance", "target_reported") for summary in summaries}
+    return {"provenance": next(iter(provenance)) if len(provenance) == 1 else "mixed" if provenance else "target_reported",
+            "fields": fields}
 
 
 def summarize_usage(turns, execution_complete=True):

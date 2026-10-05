@@ -31,6 +31,7 @@ def engine_hash():
         "target_client.py",
         "target_telemetry.py",
         "provider_telemetry.py",
+        "model_gateway.py",
         "usage_accounting.py",
         "server_config.py",
         "repositories.py",
@@ -158,7 +159,7 @@ def _body(job):
     return {
         k: v
         for k, v in job.items()
-        if k not in {"id", "created_at", "updated_at", "state", "cancel_requested"}
+        if k not in {"id", "created_at", "updated_at", "state", "cancel_requested", "gateway"}
     }
 
 
@@ -257,6 +258,14 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
             })
         except TargetError as exc:
             state, error = ("timeout" if exc.code == "timeout" else "error"), exc.code
+            if exc.gateway is not None:
+                from .model_gateway import gateway_trace_events
+                turns.append({"turn": index, "request": scrub(request, client.secrets), "output": None,
+                              "usage": None, "usage_mode": "model", "trace": None, "gateway": exc.gateway,
+                              "execution_status": "error", "error": error,
+                              "latency_ms": round((time.monotonic() - sent_mono) * 1000, 3)})
+                events.extend(gateway_trace_events(None, exc.gateway, job_id=job_id, case_id=case.id,
+                    session_id=session, turn=index, budget_id=budget.id, attempt=attempt))
             events.append(
                 {
                     "id": f"error_{index}",
@@ -289,8 +298,14 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
                 "adapter_evidence": response.adapter_evidence.model_dump() if response.adapter_evidence else None,
             }
         )
-        events.extend(trace_events(trace, job_id=job_id, case_id=case.id, session_id=session, turn=index,
-                                   budget_id=budget.id, attempt=attempt))
+        if response._gateway is not None:
+            from .model_gateway import gateway_trace_events
+            turns[-1]["gateway"] = response._gateway
+            events.extend(gateway_trace_events(trace, response._gateway, job_id=job_id, case_id=case.id,
+                session_id=session, turn=index, budget_id=budget.id, attempt=attempt))
+        else:
+            events.extend(trace_events(trace, job_id=job_id, case_id=case.id, session_id=session, turn=index,
+                                       budget_id=budget.id, attempt=attempt))
         events.append(
             {
                 "id": f"assistant_{index}",
@@ -486,13 +501,22 @@ def run_assessment(db, job_id, target, suite, repository=None, *, transport=None
         return db.job(job_id)["cancel_requested"] or bool(cancel_check and cancel_check())
 
     state = "completed"
+    binding = None
     try:
+        if body.get("model_gateway"):
+            if not target.deployment or not body.get("build_provenance", {}).get("native_entry"):
+                raise TargetError("gateway_requires_generated_python_adapter")
+            try:
+                binding = db.gateway.bind(job_id, target)
+            except (ValueError, OSError, RuntimeError):
+                raise TargetError("gateway_configuration_or_start_failed") from None
         token = secrets.token_urlsafe(32) if target.deployment and target.deployment.service_token_variable else None
-        with deployed_target(target, resources=db, job_id=job_id, cancelled=cancelled, service_token=token) as (endpoint, deployment):
+        options = {"runtime_environment": binding.environment} if binding else {}
+        with deployed_target(target, resources=db, job_id=job_id, cancelled=cancelled, service_token=token, **options) as (endpoint, deployment):
             if body.get("build_provenance", {}).get("image_id") == deployment.get("image_id") and deployment.get("image_id"):
                 deployment["source_binding"] = "built_from_checkout"
             body["deployment"] = deployment
-            client = TargetClient(target, endpoint, transport=transport, token_override=token)
+            client = TargetClient(target, endpoint, transport=transport, token_override=token, gateway=binding)
             client.required_entry = body.get("build_provenance", {}).get("native_entry")
             if target.health_path and not target.deployment:
                 body["health"] = client.health()
@@ -509,6 +533,9 @@ def run_assessment(db, job_id, target, suite, repository=None, *, transport=None
     except Exception:
         # Exceptions can include target content, credentials or operator paths.
         state, body["error"] = "failed", "assessment_internal_error"
+    finally:
+        if binding:
+            db.gateway.release(binding)
     if cancelled():
         state = "cancelled"
     body["finished_at"] = now()
@@ -521,6 +548,9 @@ class AssessmentManager:
     def __init__(self, store: Store, targets: dict[str, TargetDefinition]):
         self._lock = ServiceLock(store.root)
         self.db = AssessmentStore(store)
+        from .model_gateway import ModelGateway
+        self.db.gateway = ModelGateway(store)
+        self.db.gateway.db.recover()
         self.targets = targets
         self.db.recover_resources()
         self.db.recover_interrupted()
@@ -542,6 +572,7 @@ class AssessmentManager:
         for job_id in self.db.active_jobs():
             self.db.cancel(job_id)
         self.executor.shutdown(wait=True, cancel_futures=True)
+        self.db.gateway.close()
         self._lock.close()
 
 
@@ -609,6 +640,12 @@ def assessment_markdown(job):
         f"- 完成：{job['completed']}/{job['planned']}",
     ]
     summary = job.get("quality", {}).get("summary")
+    if job.get("gateway"):
+        gateway = job["gateway"]
+        lines += ["", "## 模型网关记录", "",
+                  f"- 已保存请求：{gateway['request_count']}；未结束：{gateway['pending']}",
+                  f"- 网关路径 Token：{format_usage(gateway['usage'], 'total_tokens')}",
+                  "- 来源为网关采集的供应商报告；仅覆盖经过网关的请求，不与目标自报重复相加。"]
     if summary:
         lines += ["", "## 结论与下一步", "", f"**{summary['headline']}**", "",
                   f"通过 {summary['pass']} 次；未通过 {summary['fail']} 次；证据不足 {summary['inconclusive']} 次；"
@@ -685,7 +722,7 @@ def assessment_markdown(job):
         def display(value):
             return "未知" if value is None else value
         lines += [
-            f"- 自报 Token：输入 {format_usage(usage, 'input_tokens')}；输出 {format_usage(usage, 'output_tokens')}；总计 {format_usage(usage, 'total_tokens')}",
+            f"- {'网关' if usage.get('provenance') == 'gateway_reported' else '自报'} Token：输入 {format_usage(usage, 'input_tokens')}；输出 {format_usage(usage, 'output_tokens')}；总计 {format_usage(usage, 'total_tokens')}",
             f"- 自报调用：模型 {display(telemetry.get('llm_calls'))}；工具 {display(telemetry.get('tool_calls'))}；覆盖 {telemetry.get('coverage', 'unavailable')}",
             f"- 自报错误：模型 {display(telemetry.get('llm_errors'))}；工具 {display(telemetry.get('tool_errors'))}",
             f"- 自报调用耗时合计 ms：模型 {display(telemetry.get('llm_duration_ms'))}；工具 {display(telemetry.get('tool_duration_ms'))}",
@@ -737,6 +774,7 @@ def assessment_bundle(db, job):
     return {
         "assessment_version": "agent-review/assessment-bundle-v1",
         "job": job,
+        **({"gateway": db.gateway_records.snapshot(job["id"])} if job.get("model_gateway") else {}),
         "suite": json.loads(suite),
         "repository": db.repository(job["repository_id"]) if job["repository_id"] else None,
         "runs": [

@@ -21,6 +21,7 @@ export function ModelCallUsage({ data }: { data: Record<string, unknown> }) {
   const reasons: Record<string, string> = { provider_usage_missing: "供应商未返回用量", stream_interrupted: "流未完整结束",
     request_failed: "请求失败，保留已知用量", invalid_or_oversized_response: "部分响应未能采集" };
   return <>
+    {context.collection === "model_gateway" && <span>网关采集 · 供应商报告</span>}
     <span>{Object.entries(labels).filter(([key]) => key === "input" || key === "output" || tokens[key] != null)
       .map(([key, label]) => `${label} Token ${tokens[key] == null ? "未知" : `${context.usage_complete === false ? "≥" : ""}${tokens[key]}`}`).join(" · ")}</span>
     {typeof context.usage_missing_reason === "string" && <span>{reasons[context.usage_missing_reason] || context.usage_missing_reason}</span>}

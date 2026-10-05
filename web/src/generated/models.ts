@@ -59,12 +59,12 @@ export type Task = {
 export type UsageField = {
   "value"?: number | number | null;
   "status": "complete" | "partial" | "unknown" | "not_applicable";
-  "source": "aggregate" | "calls" | "mixed" | "none" | "offline";
+  "source": "aggregate" | "calls" | "gateway" | "mixed" | "none" | "offline";
   "reason": string;
 }
 
 export type UsageSummary = {
-  "provenance"?: "target_reported" | "exporter_reported";
+  "provenance"?: "target_reported" | "exporter_reported" | "gateway_reported" | "mixed";
   "fields": Record<string, UsageField>;
 }
 
