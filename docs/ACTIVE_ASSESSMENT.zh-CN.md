@@ -53,6 +53,8 @@ uv run agent-review assessment-report assessment_ID \
 
 ### 自动生成测试文件
 
+网页默认使用通用任务模板：12 类任务覆盖 7 个维度，支持多轮澄清/纠错、空结果、引用与冲突核对。无需专用工具或仓库源码，目标须按题目返回 JSON。操作、完整场景和结果解读见[通用任务评测](GENERAL_ASSESSMENT.zh-CN.md)。下面的 smolagents 模板仍可选。
+
 使用 [smolagents 示例](../examples/smolagents/README.md) 时，无需手写所有题目。网页的新建评测区提供「自动生成测试文件」，配置 1–30 个案例和种子后，生成的题集自动成为当前评测输入。可以预览验收规则、下载保存，也可以直接开始评测。
 
 ```sh

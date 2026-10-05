@@ -498,10 +498,12 @@ def assess(
 def generate_assessment_suite(
     output: Path = Path("suite.generated.json"), template: str = "smolagents",
     cases: int = typer.Option(12, min=1, max=30), seed: int = typer.Option(42, min=0, max=2147483647),
+    attempts: int = typer.Option(1, min=1, max=3), concurrency: int = typer.Option(1, min=1, max=4),
 ):
-    """生成 smolagents 测试题集与独立答案；不调用模型，不覆盖已有文件。"""
+    """生成 general 或 smolagents 题集与独立答案；不调用模型，不覆盖已有文件。"""
     try:
-        suite = generate_suite(SuiteGenerationInput(template=template, cases=cases, seed=seed))
+        suite = generate_suite(SuiteGenerationInput(template=template, cases=cases, seed=seed,
+                                                    attempts=attempts, concurrency=concurrency))
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("x", encoding="utf-8") as stream:
             stream.write(json.dumps(suite.model_dump(), ensure_ascii=False, indent=2, sort_keys=True) + "\n")
@@ -509,7 +511,7 @@ def generate_assessment_suite(
     except FileExistsError:
         raise typer.BadParameter("输出文件已存在，请选择新文件名以保留已有题集。") from None
     except (ValueError, OSError):
-        raise typer.BadParameter("无法生成题集；template 需为 smolagents，并检查案例数、seed 与输出路径。") from None
+        raise typer.BadParameter("无法生成题集；template 需为 general 或 smolagents，请检查参数、累计期限（≤900 秒）与输出路径。") from None
 
 
 @app.command("plan-repository")

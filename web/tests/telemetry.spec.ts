@@ -17,6 +17,7 @@ test("actual smolagents calls appear in assessment, evidence export and timeline
   await page.getByRole("button", { name: "开始评测", exact: false }).click();
   const details = page.locator("section").filter({ has: page.getByRole("heading", { name: "评测详情 · smolagents-offline" }) });
   await expect(details).toContainText("已完成 · 1/1", { timeout: 30000 });
+  await page.getByText("模型与工具调用 · 资源明细", { exact: true }).click();
   const stats = page.getByRole("table", { name: "模型与工具调用统计" });
   await expect(stats).toContainText("目标声明完整");
   const cells = stats.locator("tbody tr").first().locator("td");

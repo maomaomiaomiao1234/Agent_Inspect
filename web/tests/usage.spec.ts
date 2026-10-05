@@ -20,6 +20,7 @@ for (const mode of ["complete", "partial", "offline"]) {
     await page.getByRole("button", { name: "开始评测", exact: false }).click();
     const details = page.locator("section").filter({ has: page.getByRole("heading", { name: `评测详情 · token-${mode}` }) });
     await expect(details).toContainText("已完成 · 1/1", { timeout: 15000 });
+    await page.getByText("模型与工具调用 · 资源明细", { exact: true }).click();
     const cells = page.getByRole("table", { name: "模型与工具调用统计" }).locator("tbody tr").first().locator("td");
     const expected = mode === "complete" ? ["20", "10", "30"] : mode === "partial" ? ["≥10", "≥5", "≥15"] :
       ["不适用（离线校准）", "不适用（离线校准）", "不适用（离线校准）"];

@@ -3,6 +3,7 @@
 import random
 
 from .assessment_contracts import AssessmentSuite, RepositoryPlanInput
+from .general_suite import exact_rules
 from .util import digest
 
 LABELS = {
@@ -56,13 +57,12 @@ def _probe(dimension, index, rng):
         prompt = "Return the code remembered in this session as JSON with code; if none, use NONE."
         turns = [{"prompt": f"Remember code {code} in this session. Return only JSON with stored=true."},
                  {"prompt": prompt, "history": "current"}]
-        extra.append({"id": "stored", "op": "equals", "path": "/artifacts/assessment/turns/0/output/stored", "value": True})
+        extra.extend(exact_rules({"stored": True}, root="/artifacts/assessment/turns/0/output", prefix="first-"))
     else:
         expected = {"code": "NONE"}
         prompt = "Return the code remembered in this session as JSON with code; if none, use NONE."
     # Verify business fields exactly while tolerating adapter metadata such as _execution.
-    rules = [{"id": f"correct-{key}", "op": "equals", "path": f"/output/{key}", "value": value}
-             for key, value in expected.items()] + extra
+    rules = exact_rules(expected) + extra
     return {"id": case_id, "category": dimension, "description": LABELS[dimension],
             "turns": turns if dimension == "memory" else [{"prompt": prompt}], "input": inputs,
             "profile": {"profile_version": "1", "id": case_id, "rules": rules}}

@@ -1,6 +1,7 @@
 """Active assessment orchestrator: fixed cases -> target calls -> independent Profiles."""
 
 import json
+import re
 import secrets
 import time
 import uuid
@@ -9,7 +10,7 @@ from itertools import groupby
 from pathlib import Path
 
 from .assessment_contracts import AssessmentSuite, TargetDefinition, TargetRequest
-from .assessment_quality import quality_summary
+from .assessment_quality import quality_summary, result_guidance
 from .assessment_store import AssessmentStore
 from .profiles import evaluate_profile
 from .repositories import inspect_repository
@@ -45,6 +46,8 @@ def engine_hash():
         "repository_adaptation.py",
         "repository_templates/auto_runtime.py",
         "assessment_quality.py",
+        "general_suite.py",
+        "suite_generation.py",
     )
     root = Path(__file__).parent
     return digest({name: digest((root / name).read_bytes()) for name in modules})
@@ -351,8 +354,9 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         evaluation.outcome = "inconclusive"
         evaluation.outcome_reason = "评审端未完成目标调用；保留已有对话，不据此确认能力通过或失败。"
     store.save_evaluation(evaluation)
-    return {
+    result = {
         "case_id": case.id,
+        "description": case.description,
         "category": case.category,
         "budget_id": budget.id,
         "attempt": attempt,
@@ -368,6 +372,8 @@ def _case(store, client, job_id, suite, case, budget, attempt, repository, cance
         "source_evidence": sources,
         "checks": evaluation.custom["checks"],
     }
+    result["guidance"] = result_guidance(result)
+    return result
 
 
 def _summarize(body, suite, repository):
@@ -582,17 +588,41 @@ def compare_assessments(left, right):
 
 
 def assessment_markdown(job):
+    def safe(value):
+        text = str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return re.sub(r"([\\`*{}\[\]()#+!|_])", r"\\\1", text).replace("\n", " ").replace("\r", " ")
+
+    outcome_labels = {"pass": "通过", "fail": "未通过", "inconclusive": "证据不足", "unknown": "证据不足"}
+    state_labels = {"completed": "已完成", "running": "执行中", "queued": "排队中", "failed": "执行异常",
+                    "cancelled": "已取消", "interrupted": "已中断", "error": "调用异常", "timeout": "超时",
+                    "budget_exhausted": "输出预算耗尽"}
     lines = [
         f"# Agent 主动评测：{job['suite_id']}",
         "",
         f"- 任务：{job['id']}",
-        f"- 目标：{job['target_id']}；状态：{job['state']}；示例：{job['demo']}",
-        f"- 仓库提交：{job['commit'] or '未知'}",
-        f"- Suite SHA-256：{job['suite_hash']}",
-        f"- 执行器 SHA-256：{job['engine_hash']}",
-        f"- 目标配置 SHA-256：{job['target_hash']}",
+        f"- 目标：{job['target_id']}；执行状态：{state_labels.get(job['state'], job['state'])}；示例：{'是' if job['demo'] else '否'}",
         f"- 完成：{job['completed']}/{job['planned']}",
-        "",
+    ]
+    summary = job.get("quality", {}).get("summary")
+    if summary:
+        lines += ["", "## 结论与下一步", "", f"**{summary['headline']}**", "",
+                  f"通过 {summary['pass']} 次；未通过 {summary['fail']} 次；证据不足 {summary['inconclusive']} 次；"
+                  f"未取得结果 {summary['pending']} 次。执行异常或取消 {summary['execution_issues']} 次。", "",
+                  summary["scope_note"], ""]
+        if job["demo"]:
+            lines += ["本次为控制示例，仅用于校准评测流程。", ""]
+        lines += [f"- {step}" for step in summary["next_steps"]]
+        lines += ["", "题集覆盖（按计划）：" + "、".join(c["label"] for c in summary["covered_categories"])]
+        if summary["uncovered_categories"]:
+            lines += ["", "尚未覆盖（按需补测）：" + "、".join(c["label"] for c in summary["uncovered_categories"])]
+        attention = [r for r in job["results"] if r["outcome"] != "pass"]
+        if attention:
+            lines += ["", "### 优先处理", "", "|案例 / 预算 / 次数|原因|下一步|", "|---|---|---|"]
+            for row in attention:
+                guidance = row.get("guidance") or result_guidance(row)
+                lines.append(f"|{safe(row.get('description') or row['case_id'])} / {safe(row['budget_id'])} / {row['attempt']}|"
+                             f"{safe(guidance['reason'])}|{safe(guidance['next_step'])}|")
+    lines += ["",
         "## 预算与结果",
         "",
         "|预算|通过|失败|未知|通过率|平均观测耗时 ms|自报 Token|自报费用 USD|",
@@ -611,7 +641,7 @@ def assessment_markdown(job):
                   "|维度 / 预算|完成 / 计划|通过 / 失败 / 未知|通过率范围|p50 / p95 ms|",
                   "|---|---:|---:|---:|---:|"]
         for row in quality["dimensions"]:
-            lines.append(f"|{row['category']} / {row['budget_id']}|{row['observed']} / {row['planned']}|"
+            lines.append(f"|{safe(row.get('label', row['category']))} / {safe(row['budget_id'])}|{row['observed']} / {row['planned']}|"
                          f"{row['pass']} / {row['fail']} / {row['unknown']}|"
                          f"{row['confirmed_pass_rate']}%–{row['possible_pass_rate']}%|"
                          f"{row['p50_duration_ms']} / {row['p95_duration_ms']}|")
@@ -630,13 +660,21 @@ def assessment_markdown(job):
     lines += ["", "## 独立任务验收与源码线索", ""]
     for result in job["results"]:
         lines += [
-            f"### {result['case_id']} / {result['budget_id']} / {result['attempt']}",
+            f"### {safe(result.get('description') or result['case_id'])} / {safe(result['budget_id'])} / {result['attempt']}",
             "",
-            f"{result['outcome']} · {result['execution_state']} · run_id={result['run_id']}",
+            f"{outcome_labels.get(result['outcome'], result['outcome'])} · "
+            f"{state_labels.get(result['execution_state'], result['execution_state'])} · run_id={result['run_id']}",
+            f"案例编号：{safe(result['case_id'])}",
             "",
         ]
         for check in result["checks"]:
-            lines.append(f"- {check['id']}：{check['status']} · {check['explanation']}")
+            lines.append(f"- {safe(check.get('description') or check['id'])}："
+                         f"{outcome_labels.get(check['status'], check['status'])} · {safe(check['explanation'])}")
+            comparison = check.get("comparison")
+            if comparison and check["status"] != "pass":
+                lines += [f"  - 条件：{safe(comparison['path'])} / {safe(comparison['operator'])}",
+                          f"  - 期望：{safe(comparison['expected'])}",
+                          f"  - 实际返回：{safe(comparison['actual'])}"]
         usage = result.get("usage", {})
         telemetry = result.get("telemetry", {})
         def display(value):
@@ -666,6 +704,10 @@ def assessment_markdown(job):
             f"- {claim['id']} / {claim['capability']}：{claim['assessment_status']}；{claim['path']}:{claim['line']}"
         )
     lines += ["", "## 可复现材料与限制", "", f"- Suite 工件：{job['suite_artifact']}",
+              f"- 仓库提交：{job['commit'] or '未知'}",
+              f"- Suite SHA-256：{job['suite_hash']}",
+              f"- 执行器 SHA-256：{job['engine_hash']}",
+              f"- 目标配置 SHA-256：{job['target_hash']}",
               "- 内部调用与完整覆盖均由目标声明；partial 的计数是可见下界，未采集数据保持未知。",
               "- final_answer 计入工具调用；逐次耗时可能重叠。汇总用量不与调用用量重复相加。",
               "- 逐次调用的参数、结果、状态、耗时、Token 与 session/case/run 关联见证据包和运行轨迹。"]

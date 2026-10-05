@@ -72,6 +72,8 @@ def oracle_transport(mode="correct"):
         if mode == "wrong":
             output = {"answer": "wrong", "code": "wrong", "stored": False, "ids": [], "total": -999,
                       "values": [], "destination": "wrong", "citations": ["wrong"]}
+        elif mode == "missing-stored" and prompt.startswith("Remember code"):
+            output = {}
         return httpx.Response(200, json={"output": {**output, "_execution": {"framework": "fixture"}}, "trace": trace})
     return httpx.MockTransport(respond)
 
@@ -117,7 +119,7 @@ def test_plan_reproducible_relevant_bounded_and_not_claim_certification(source):
     assert any(g["kind"] == "dimension" for g in short["gaps"])
 
 
-@pytest.mark.parametrize("mode", ["correct", "wrong", "no-trace", "wrong-citation"])
+@pytest.mark.parametrize("mode", ["correct", "wrong", "no-trace", "wrong-citation", "missing-stored"])
 def test_independent_oracle_checks_outcomes_citations_and_unknown_tools(source, tmp_path, mode):
     result, plan = execute(source, tmp_path / "data", mode, cases=9, attempts=2, concurrency=3)
     assert result["state"] == "completed" and result["completed"] == 18
@@ -129,6 +131,9 @@ def test_independent_oracle_checks_outcomes_citations_and_unknown_tools(source, 
         assert {r["outcome"] for r in result["results"]} == {"fail"}
     elif mode == "no-trace":
         assert {r["outcome"] for r in result["results"] if r["category"] == "tool_use"} == {"inconclusive"}
+    elif mode == "missing-stored":
+        assert {r["outcome"] for r in result["results"] if r["category"] == "memory"} == {"fail"}
+        assert {r["outcome"] for r in result["results"] if r["category"] != "memory"} == {"pass"}
     else:
         assert {r["outcome"] for r in result["results"] if r["category"] in {"retrieval", "robustness"}} == {"fail"}
     assert result["quality"]["evidence"]["token_known_runs"] == 0

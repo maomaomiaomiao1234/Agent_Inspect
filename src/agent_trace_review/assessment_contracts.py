@@ -264,9 +264,18 @@ class AssessmentInput(Contract):
 
 
 class SuiteGenerationInput(Contract):
-    template: Literal["smolagents"] = "smolagents"
+    template: Literal["smolagents", "general"] = "smolagents"
     cases: int = Field(default=12, ge=1, le=30, strict=True)
     seed: int = Field(default=42, ge=0, le=2147483647, strict=True)
+    attempts: int = Field(default=1, ge=1, le=3, strict=True)
+    concurrency: int = Field(default=1, ge=1, le=4, strict=True)
+
+    @model_validator(mode="after")
+    def bounded_generation(self):
+        deadline = 10 if self.template == "general" else 30
+        if self.cases * self.attempts * deadline > 900:
+            raise ValueError("生成题集的累计任务 deadline 不得超过 900 秒；请减少案例数或重复次数。")
+        return self
 
 
 class RepositoryPlanInput(Contract):

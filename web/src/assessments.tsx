@@ -2,16 +2,18 @@ import { useEffect, useState } from "react";
 import { api, DownloadLink } from "./api-client";
 import { RepositoryAssessments } from "./repository-assessments";
 import { UsageValue, type Usage } from "./usage";
+import { AssessmentOverview, ResultReview, categoryLabels, type AssessmentSummary, type AssessmentResult } from "./assessment-report";
 
 type Target = { id: string; repository_configured: boolean; managed: boolean; demo: boolean };
-type GeneratedSuite = { id: string; description: string; cases: { id: string; turns: unknown[] }[] };
+type GeneratedSuite = { id: string; description: string; attempts?: number; budgets?: unknown[];
+  cases: { id: string; description?: string; category?: string; turns: { prompt: string }[] }[] };
 type Source = { path: string; line: number; url?: string };
 type Claim = Source & { id: string; capability: string; snippet: string; assessment_status?: string };
 type Repository = { id: string; commit: string | null; snapshot_kind: string; files: unknown[]; claims: Claim[]; limitations: string[] };
 type Plan = { id: string; suite: GeneratedSuite; estimated_requests: number; max_serial_deadline_seconds: number;
   dimensions: { id: string; label: string; cases: number }[]; gaps: { kind: string; name: string; reason: string }[];
   tool_candidates: { name: string; path: string; line: number; parameters: string[] }[]; limitations: string[] };
-type Quality = { dimensions: { category: string; budget_id: string; observed: number; planned: number;
+type Quality = { summary?: AssessmentSummary; dimensions: { category: string; budget_id: string; observed: number; planned: number;
   pass: number; fail: number; unknown: number; confirmed_pass_rate: number; possible_pass_rate: number;
   p50_duration_ms: number | null; p95_duration_ms: number | null }[];
   stability: { case_id: string; budget_id: string; status: string; observed: number; planned: number }[];
@@ -28,9 +30,7 @@ type Job = {
   commit: string | null; repository_id: string | null; error: string | null; demo: boolean;
   curves: { budget: { id: string }; pass: number; fail: number; unknown: number; pass_rate: number;
     mean_duration_ms: number | null; reported_total_tokens: number | null; reported_cost_usd: number | null; usage?: Usage }[];
-  results: { case_id: string; budget_id: string; attempt: number; outcome: string; run_id: string;
-    execution_state: string; error: string | null; source_evidence: Source[]; telemetry?: Telemetry;
-    usage?: Usage }[];
+  results: (AssessmentResult & { source_evidence: Source[]; telemetry?: Telemetry; usage?: Usage })[];
   claims: Claim[]; limitations: string[];
   quality?: Quality; concurrency?: number;
   purpose?: string;
@@ -65,7 +65,7 @@ export function Assessments() {
   const [generated, setGenerated] = useState<GeneratedSuite | null>(null);
   const [caseCount, setCaseCount] = useState(12);
   const [seed, setSeed] = useState(42);
-  const [template, setTemplate] = useState("smolagents");
+  const [template, setTemplate] = useState("general");
   const [attempts, setAttempts] = useState(1);
   const [concurrency, setConcurrency] = useState(1);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -153,6 +153,7 @@ export function Assessments() {
         <h3>自动生成测试文件</h3>
         <div className="assessment-controls">
           <label>测试模板<select aria-label="测试模板" disabled={busy} value={template} onChange={e => setTemplate(e.target.value)}>
+            <option value="general">通用任务 · 12 类场景 / 7 个维度</option>
             <option value="smolagents">smolagents 基础能力</option>
             <option value="repository">根据源码规划评测</option>
           </select></label>
@@ -160,7 +161,7 @@ export function Assessments() {
             value={caseCount} onChange={e => setCaseCount(Number(e.target.value))} /></label>
           <label>随机种子<input aria-label="随机种子" type="number" min="0" max="2147483647" step="1"
             value={seed} onChange={e => setSeed(Number(e.target.value))} /></label>
-          {template === "repository" && <>
+          {template !== "smolagents" && <>
             <label>重复次数<select aria-label="重复次数" value={attempts} onChange={e => setAttempts(Number(e.target.value))}>
               {[1, 2, 3].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
             <label>案例并发<select aria-label="案例并发" value={concurrency} onChange={e => setConcurrency(Number(e.target.value))}>
@@ -179,7 +180,8 @@ export function Assessments() {
             }
             const created = await api<GeneratedSuite>("/assessment-suites/generate", { method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ template: "smolagents", cases: caseCount, seed }) });
+              body: JSON.stringify({ template, cases: caseCount, seed,
+                attempts: template === "general" ? attempts : 1, concurrency: template === "general" ? concurrency : 1 }) });
             setPlan(null); setGenerated(created); setSuite(created); setSuiteName(`${created.id}.json`);
           })}>生成测试文件</button>
           {generated && <button onClick={() => {
@@ -188,7 +190,8 @@ export function Assessments() {
             link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
           }}>下载测试 JSON</button>}
         </div>
-        <p className="scenario-note">生成无需模型额度，标准答案由程序计算。源码规划要求登记仓库和 target-v1 服务，按源码线索选择受控任务。
+        <p className="scenario-note">生成无需模型额度，标准答案由程序计算。通用模板无需源码或特定工具，12 个案例覆盖全部场景；每案例期限 10 秒，支持重复评测。
+          源码规划要求登记仓库和 target-v1 服务，按源码线索选择受控任务。
           smolagents 模板要求示例工具和 JSON 输出约定；源码规划要求各题指定的 JSON 输出，跨轮与隔离测试保持串行。</p>
         {plan && <section aria-label="源码评测计划">
           <h3>源码评测计划</h3>
@@ -203,6 +206,13 @@ export function Assessments() {
         {generated && <div role="status"><p>已生成 {generated.cases.length} 个案例、
           {generated.cases.reduce((total, item) => total + item.turns.length, 0)} 轮请求。
           可下载保存，也可直接点击“开始评测”。</p>
+          <p>计入重复与预算：共 {generated.cases.length * (generated.attempts ?? 1) * (generated.budgets?.length ?? 1)} 次案例执行、
+            {generated.cases.reduce((n, c) => n + c.turns.length, 0) * (generated.attempts ?? 1) * (generated.budgets?.length ?? 1)} 轮请求。</p>
+          <details><summary>任务清单与评测范围</summary><p>{generated.description}</p>
+            <ul>{generated.cases.map(c => <li key={c.id}><strong>{c.description || c.id}</strong>
+              {c.category ? ` · ${categoryLabels[c.category] || c.category}` : ""} · {c.turns.length} 轮
+              <details><summary>查看任务 · {c.id}</summary>{c.turns.map((t, i) => <p key={i}>第 {i + 1} 轮：{t.prompt}</p>)}</details>
+            </li>)}</ul></details>
           <details><summary>预览题目和验收规则</summary><pre className="json-preview">{JSON.stringify(generated, null, 2)}</pre></details>
         </div>}
         <p className="scenario-note">标准答案和验收规则留在评审端。评测会向登记的 Agent 发出请求，可能使用该 Agent 配置的模型额度。</p>
@@ -234,6 +244,9 @@ export function Assessments() {
       <p>{stateLabel[job.state]} · {job.completed}/{job.planned} · 源码提交：<code>{job.commit || "未知"}</code></p>
       {job.purpose === "adapter_validation" && <p className="scenario-note">这是适配器接入检查，验证原入口调用和协议；本题及用量不计入正式能力评测。</p>}
       {job.error && <p role="alert">执行错误：{job.error}</p>}
+      {job.quality?.summary && <AssessmentOverview summary={job.quality.summary} demo={job.demo} />}
+      <ResultReview key={job.id} results={job.results} />
+      <h3>预算与结果</h3>
       <div className="assessment-table"><table><thead><tr><th>预算</th><th>通过</th><th>失败</th><th>未知</th><th>通过率</th><th>平均观测耗时</th><th>自报 Token</th></tr></thead>
         <tbody>{job.curves.map(c => <tr key={c.budget.id}><td>{c.budget.id}</td><td>{c.pass}</td><td>{c.fail}</td><td>{c.unknown}</td>
           <td>{c.pass_rate}%</td><td>{c.mean_duration_ms == null ? "未知" : `${(c.mean_duration_ms / 1000).toFixed(2)} 秒`}</td>
@@ -246,7 +259,7 @@ export function Assessments() {
           必需检查未知 {job.quality.evidence.unknown_required_checks}/{job.quality.evidence.required_checks} 项。</p>
         <div className="assessment-table"><table><thead><tr><th>维度 / 预算</th><th>完成 / 计划</th><th>通过 / 失败 / 未知</th><th>通过率范围</th><th>p50 / p95 ms</th></tr></thead>
           <tbody>{job.quality.dimensions.map(d => <tr key={`${d.category}-${d.budget_id}`}>
-            <td>{d.category} / {d.budget_id}</td><td>{d.observed} / {d.planned}</td><td>{d.pass} / {d.fail} / {d.unknown}</td>
+            <td>{categoryLabels[d.category] || d.category} / {d.budget_id}</td><td>{d.observed} / {d.planned}</td><td>{d.pass} / {d.fail} / {d.unknown}</td>
             <td>{d.confirmed_pass_rate}%–{d.possible_pass_rate}%</td><td>{d.p50_duration_ms ?? "未知"} / {d.p95_duration_ms ?? "未知"}</td>
           </tr>)}</tbody></table></div>
         <details><summary>重复稳定性</summary><ul>{job.quality.stability.map(s => <li key={`${s.case_id}-${s.budget_id}`}>
@@ -255,7 +268,7 @@ export function Assessments() {
           {s.name}：{qualityLabel[s.status] || s.status} · <SourceLink source={s} /></li>)}</ul></details>
         <p className="scenario-note">通过率范围表示未知项的最好与最坏情况，不是统计置信区间或总体能力分数。重复少于两次无法判断稳定性。</p>
       </section>}
-      <h3>模型与工具调用</h3>
+      <details className="assessment-technical"><summary>模型与工具调用 · 资源明细</summary>
       <p className="scenario-note">内部记录由目标自报。≥ 表示部分记录的可见下界；未知表示未采集。
         工具计数包含 final_answer；调用耗时之和可能包含并发重叠。点击“查看对话和验收”可查看逐次调用的参数、结果和状态。</p>
       <div className="assessment-table"><table aria-label="模型与工具调用统计"><thead><tr>
@@ -279,6 +292,7 @@ export function Assessments() {
         .filter(([key]) => ["input_tokens", "output_tokens", "total_tokens", "cost_usd"].includes(key))
         .map(([key, field]) => <li key={`${r.run_id}-${key}`}>{r.case_id} / {r.budget_id} · {key}：
           <UsageValue usage={r.usage} field={key} /> · {field.source} · {field.reason}</li>))}</ul></details>
+      </details>
       <div className="assessment-table"><table><thead><tr><th>案例 / 预算 / 次数</th><th>验收</th><th>执行</th><th>源码线索</th><th>证据</th></tr></thead>
         <tbody>{job.results.map(r => <tr key={r.run_id}><td>{r.case_id} / {r.budget_id} / {r.attempt}</td><td>{outcomeLabel[r.outcome]}</td>
           <td>{r.execution_state}{r.error ? ` · ${r.error}` : ""}</td><td>{r.source_evidence.map((s, i) => <div key={i}><SourceLink source={s} /></div>)}</td>

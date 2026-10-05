@@ -26,7 +26,7 @@ test("source plan generates, runs, reports quality and preserves frozen suite", 
   await expect(page.getByText("已完成 · 16/16", { exact: false })).toBeVisible({ timeout: 30000 });
   const quality = page.getByRole("region", { name: "维度覆盖与质量" });
   await expect(quality).toContainText("案例并发上限 3");
-  await expect(quality).toContainText("Token 已知 0/16");
+  await expect(quality).toContainText("Token 完整 0/16");
   await quality.getByText("重复稳定性", { exact: true }).click();
   await expect(quality).toContainText("重复失败");
   await page.setViewportSize({ width: 390, height: 844 });

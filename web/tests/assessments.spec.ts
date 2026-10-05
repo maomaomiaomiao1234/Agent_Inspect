@@ -54,6 +54,7 @@ test("generate and download reusable test JSON without submitting an assessment"
   page.on("request", event => {
     if (event.method() === "POST" && new URL(event.url()).pathname === "/api/assessments") submissions.push(event.url());
   });
+  await page.getByLabel("测试模板").selectOption("smolagents");
   await page.getByLabel("案例数量").fill("7");
   await page.getByLabel("随机种子").fill("81");
   await page.getByRole("button", { name: "生成测试文件", exact: true }).click();

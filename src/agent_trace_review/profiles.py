@@ -91,6 +91,22 @@ def json_equal(left, right):
     return left == right
 
 
+def comparison_preview(rule, context):
+    """Bounded, redacted display only; verdicts always use the full evaluator context."""
+    if rule.op in {"external", "tool_required", "tool_forbidden"}:
+        return None
+
+    def preview(value):
+        if value is MISSING:
+            return "（字段缺失）"
+        text = canonical(redact(value))
+        return text if len(text) <= 600 else text[:600] + "…（已截断，完整值见证据）"
+
+    return {"path": rule.path, "operator": rule.op,
+            "expected": "字段存在" if rule.op == "exists" else preview(rule.value),
+            "actual": preview(pointer(context, rule.path))}
+
+
 def rule_result(rule, context):
     """Return status, explanation and pointers into the evaluator context."""
     if rule.op in {"tool_required", "tool_forbidden"}:
@@ -250,6 +266,7 @@ def evaluate_profile(store: Store, run: Run, profile, results=None, *, persist=T
                 "explanation": explanation,
                 "evidence_ids": refs,
                 "origin": "external" if rule.op == "external" else "declarative",
+                "comparison": comparison_preview(rule, context),
             }
         )
         base.findings.append(

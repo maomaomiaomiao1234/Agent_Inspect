@@ -3,12 +3,15 @@
 import random
 
 from .assessment_contracts import AssessmentSuite, SuiteGenerationInput
+from .general_suite import generate_general_suite
 
 FAMILIES = ("addition", "subtraction", "multiplication", "two-step", "memory", "isolation", "untrusted")
 
 
 def generate_suite(settings: SuiteGenerationInput) -> AssessmentSuite:
     """This template requires the documented smolagents JSON/tool contract; no target is called."""
+    if settings.template == "general":
+        return generate_general_suite(settings)
     rng = random.Random(settings.seed)
     cases = []
     for index in range(settings.cases):
@@ -23,6 +26,9 @@ def generate_suite(settings: SuiteGenerationInput) -> AssessmentSuite:
                 {"prompt": "Return the remembered code as JSON with the field code.", "history": "current"},
             ]
             category, field, expected = "memory", "code", code
+            rules.append({
+                "id": "stored-present", "op": "exists", "path": "/artifacts/assessment/turns/0/output/stored",
+            })
             rules.append({
                 "id": "stored", "op": "equals", "path": "/artifacts/assessment/turns/0/output/stored",
                 "value": True,
@@ -67,6 +73,7 @@ def generate_suite(settings: SuiteGenerationInput) -> AssessmentSuite:
             "标准答案由程序独立计算，要求算术/保存代码/读取代码工具与 JSON 输出约定；"
             "生成不调用目标或模型，不基于仓库声明推断任意 Agent 的能力。"
         ),
-        "attempts": 1, "budgets": [{"id": "generated", "deadline_seconds": 30, "max_output_tokens": 2048}],
+        "attempts": settings.attempts, "concurrency": settings.concurrency,
+        "budgets": [{"id": "generated", "deadline_seconds": 30, "max_output_tokens": 2048}],
         "cases": cases,
     })

@@ -88,3 +88,25 @@ def test_generated_checks_reject_noop_and_never_send_answers(tmp_path):
     assert result["state"] == "completed" and result["completed"] == 7
     assert len(requests) == 8
     assert {case["outcome"] for case in result["results"]} == {"fail"}
+
+
+def test_memory_final_answer_does_not_hide_missing_first_turn_field(tmp_path):
+    suite = generate_suite(SuiteGenerationInput(cases=7))
+    suite.cases = [c for c in suite.cases if c.category == "memory"]
+    sessions = {}
+
+    def respond(request):
+        body = json.loads(request.content)
+        if body["turn"] == 0:
+            sessions[body["session_id"]] = body["prompt"].split()[2].rstrip(".")
+            return httpx.Response(200, json={"output": {}})
+        return httpx.Response(200, json={"output": {"code": sessions[body["session_id"]]}})
+
+    db = AssessmentStore(Store(tmp_path))
+    target = TargetDefinition(id="memory", endpoint="https://fixture.example", demo=True)
+    job, repository = prepare_assessment(db, target, suite)
+    result = run_assessment(db, job["id"], target, suite, repository, transport=httpx.MockTransport(respond))
+    row = result["results"][0]
+    assert row["outcome"] == "fail"
+    checks = {c["id"]: c["status"] for c in row["checks"]}
+    assert checks["correct"] == "pass" and checks["stored-present"] == "fail"

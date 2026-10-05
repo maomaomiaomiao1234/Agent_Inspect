@@ -3,6 +3,41 @@
   padding: 20px;
   min-width: 0;
 }
+.assessment-overview {
+  margin-block: 24px;
+  padding: 20px;
+  background: var(--surface, #f7f8fa);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.assessment-overview h3 { margin-top: 12px; font-size: 22px; }
+.assessment-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.assessment-counts > div { border-top: 2px solid var(--line); padding-top: 12px; }
+.assessment-counts dt { color: var(--muted); font-size: 13px; }
+.assessment-counts dd { margin: 8px 0; font-size: 28px; font-weight: 600; }
+.assessment-counts small { font-size: 13px; font-weight: normal; }
+.assessment-review { margin-block: 28px; }
+.assessment-case { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-block: 12px; }
+.assessment-case > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; cursor: pointer; overflow-wrap: anywhere; }
+.assessment-case > summary::before { content: "＋"; }
+.assessment-case[open] > summary::before { content: "−"; }
+.assessment-case > a { display: inline-block; margin-top: 16px; }
+.assessment-verdict { font-size: 12px; border: 1px solid currentColor; border-radius: 4px; padding: 3px 7px; }
+.assessment-verdict.fail { color: #983c2c; }
+.assessment-verdict.pass { color: #24664c; }
+.assessment-check { border-top: 1px solid var(--line); margin-top: 16px; }
+.assessment-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-block: 10px; }
+.assessment-comparison > div { min-width: 0; padding: 8px; background: var(--surface, #f7f8fa); border-radius: 6px; }
+.assessment-comparison dt { font-weight: 600; }
+.assessment-comparison dd { margin: 8px 0 0; }
+.assessment-comparison pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; margin: 0; }
+.assessment-technical { margin-block: 24px; }
+.assessment-technical > summary { font-weight: 600; cursor: pointer; padding-block: 12px; }
+@media (max-width: 600px) {
+  .assessment-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assessment-comparison { grid-template-columns: minmax(0, 1fr); }
+  .assessment-overview { padding: 14px; }
+}
 .assessment-controls {
   display: flex;
   flex-wrap: wrap;

@@ -64,6 +64,10 @@ with tempfile.TemporaryDirectory(prefix="agent-review-wheel-") as temporary:
     generated = client.post("/api/assessment-suites/generate", headers={"X-Review-Request": "1"},
                             json={"template": "smolagents", "cases": 7, "seed": 81})
     assert generated.status_code == 200 and len(generated.json()["cases"]) == 7
+    general = client.post("/api/assessment-suites/generate", headers={"X-Review-Request": "1"},
+                          json={"template": "general", "cases": 12, "attempts": 2, "concurrency": 3})
+    assert general.status_code == 200 and len(general.json()["cases"]) == 12
+    assert general.json()["attempts"] == 2 and general.json()["concurrency"] == 3
     assert template.joinpath("evaluator.py").is_file()
     import httpx
 
@@ -89,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix="agent-review-wheel-") as temporary:
     assert review.outcome == "inconclusive" and review.judge["backend"] == "chat-completions"
     from agent_trace_review.assessment_contracts import AssessmentSuite, TargetDefinition
     from agent_trace_review.assessment_store import AssessmentStore
-    from agent_trace_review.assessments import prepare_assessment, run_assessment
+    from agent_trace_review.assessments import assessment_markdown, prepare_assessment, run_assessment
 
     suite = AssessmentSuite.model_validate({"id": "package-assessment", "cases": [{"id": "echo",
                                            "turns": [{"prompt": "Return answer=19"}],
@@ -101,5 +105,13 @@ with tempfile.TemporaryDirectory(prefix="agent-review-wheel-") as temporary:
     result = run_assessment(db, job["id"], target, suite, repository,
                             transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"output": {"answer": 19}})))
     assert result["state"] == "completed" and result["results"][0]["outcome"] == "pass"
+    assert result["quality"]["summary"]["conclusion"] == "pass"
+    assert result["results"][0]["checks"][0]["comparison"]["actual"] == "19"
+    suite = AssessmentSuite.model_validate(general.json())
+    job, repository = prepare_assessment(db, target, suite)
+    result = run_assessment(db, job["id"], target, suite, repository,
+                           transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"output": {}})))
+    assert result["quality"]["summary"]["fail"] == 24
+    assert "结论与下一步" in assessment_markdown(result) and "实际返回：" in assessment_markdown(result)
     print(f"Wheel API, UI, coding/generic imports, profiles, templates and mocked LLM review passed: {wheel.name}")
     print("Wheel active assessment contracts, storage, suite generation and HTTP adapter passed.")
