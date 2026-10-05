@@ -1,495 +1,242 @@
-# Agent Trace Review
+# Agent Inspect · Agent 能力评测与轨迹评审
 
-**评审其他 Agent：主动发起任务并独立验收，也可以导入已有轨迹，检查结果、过程和资源。**
+Agent Inspect（Python 包名 `agent-trace-review`，当前版本 `0.3.0`）用于**向 Agent 发起任务、独立验收结果，并用可视化报告展示能力、评分和资源消耗**。也可以导入已有的 OpenCode 或通用 Agent 运行记录，检查最终产物、工具调用和验证证据。
 
-**通用任务评测与易读报告：** 主动评测页面现在默认提供通用模板，12 类任务覆盖 7 个维度，新增多轮澄清/纠错、空结果、冲突材料和多语言提取等场景。结果提供题集评分环、能力雷达、维度条形图、预算对比及点击维度查看案例；记录支持搜索、筛选和分页，原始验收与导出入口保留。分数按确认通过 / 计划执行计算，待确认和未测能力有明确标注。见[可视化与评分说明](docs/ASSESSMENT_VISUALIZATION.zh-CN.md)及[通用评测与结果阅读](docs/GENERAL_ASSESSMENT.zh-CN.md)。无需特定工具或仓库源码，仍要求目标接入 `target-v1` 并按题目返回 JSON。
+项目采用 Python / FastAPI 后端、React / TypeScript 前端和 SQLite 本地存储，提供网页与 `agent-review` 命令行两种入口。
 
-本项目支持扫描固定版本的开源仓库、向登记的 Agent 服务发起多轮任务、验证能力声明、检查会话隔离、比较预算与版本回归，并导出带证据的报告。已有 OpenCode/通用轨迹、代码修复和文档验收流程继续可用。
+- [运行截图](#运行截图)
+- [项目处理哪些任务](#项目处理哪些任务)
+- [启动所需条件](#启动所需条件)
+- [安装与启动](#安装与启动)
+- [跑通第一个评测](#跑通第一个评测)
+- [评测真实 Agent](#评测真实-agent)
+- [开发、目录与文档](#开发目录与文档)
 
-主动评测支持逐次模型和工具记录：模型名、输入/输出 Token、工具参数/结果、状态、耗时与任务关联，接入工具规则和错误恢复诊断。smolagents 示例已加入采集，其他 Agent 可输出相同协议；接入方法、根目录 `.env` 的加载和缺失数据说明见 [调用记录指南](docs/TARGET_TELEMETRY.zh-CN.md)。
+## 运行截图
 
-**适配范围：** smolagents 提供固定的内置配方，带部署清单的仓库按清单接入。未知 Python 仓库现在可使用服务端 LLM 自动生成适配器、Dockerfile 和清单，验证原入口调用后执行题集；失败时有限修复并保存原因。支持情况由实际构建和接入检查决定，不能保证任意仓库成功。已运行的 Agent 仍可接入 `target-v1`，离线日志可转换为通用轨迹。见 [自动适配指南](docs/AUTO_ADAPTATION.zh-CN.md)。
+以下是本地运行页面于 **2026-10-05** 截取的真实界面，展示已保存的仓库评测报告。图中的 `33.3` 是该次固定题集的得分，仅用于说明报告展示方式。
 
-**Token 统计：** 已按输入、输出、总量分别记录来源与完整性；完整数字、`≥已采集消耗`、未知、离线不适用分别展示。失败/超时/取消保留已有用量，顶层汇总与逐次记录不重复累计。网页可点击「检查 Token 采集」查看目标健康接口的模式和采集声明。仓库网页入口默认使用服务端配置的真实模型，离线模式可主动选择；重启更新后的服务并重新评测，才能获得新增诊断字段。历史缺失用量无法凭源码补算。探索与后续路线见 [Token 统计方案](docs/TOKEN_USAGE_EXPLORATION.zh-CN.md)。
+![桌面端评测报告：题集得分、完成度、能力雷达和维度表现](docs/images/assessment-desktop.jpg)
 
-**通用模型用量采集：** 已支持兼容 API 的 JSON/SSE、同步/异步调用、SDK 重试、缓存/推理细分及并发任务关联，自动生成的 Python 适配器直接接入。网页和导出保留完整性与请求 ID；其他框架可使用轻量包装。见 [接入指南](docs/PROVIDER_TELEMETRY.zh-CN.md)。
+<details>
+<summary>查看移动端截图（能力雷达区域）</summary>
 
-**模型网关试点：** Python 自动适配可选通过评审端网关调用模型，在目标容器崩溃后保留已保存用量，并在评审服务重启后恢复记录。网关与目标自报用量不重复相加；目前只覆盖经过网关的请求。见 [启用方式与范围](docs/MODEL_GATEWAY.zh-CN.md)。
+<img src="docs/images/assessment-mobile.jpg" alt="移动端评测报告：统计信息、能力雷达和维度表现" width="375">
 
-**网页直接评测仓库：** 在本机 `.env` 填好模型配置并启动 Docker，执行 `uv run agent-review serve`，打开 [主动评测页面](http://127.0.0.1:8765/#/assessments)，填入仓库链接，点击「拉取、部署并评测」。服务自动读取 `.env`、接入模型变量，并完成仓库构建、真实模型评测、统计与容器回收。网页可修改版本、案例数、种子、期限、输出 Token 上限、重复次数、并发和题集策略；未知 Python 仓库默认启用 LLM 自动适配，可关闭或调整修复次数。相关源码片段会发送给配置的适配模型，生成和接入检查 Token 与正式评测分开统计。操作见 [网页真实模型评测](docs/REPOSITORY_ASSESSMENT.zh-CN.md#网页直接运行真实模型评测)。
+</details>
 
-**第一次使用，建议按这个顺序：启动网页 → 加载通过示例 → 查看结果和证据 → 导入自己的数据。** 基础体验无需 OpenCode、Docker 或 API Token。
+报告提供评分环、能力雷达、维度条形图、预算表现对比和逐案例证据。点击维度可查看对应案例，评测记录支持搜索、筛选与分页，报告可导出为 Markdown、JSON 或证据包。
 
-**已知被测 Agent 源码时**：可在主动评测的模板中选择“根据源码规划评测”，自动生成覆盖结构化输出、检索引用、拒绝编造、输入干扰、记忆/隔离及受支持工具的题集与漏测清单。支持最多 4 个独立案例并发、重复稳定性分析和分维度质量报告。具体接入、源码版本绑定和能力边界见[源码评测指南](docs/SOURCE_GUIDED_ASSESSMENT.zh-CN.md)。
+**评分 = 确认通过次数 ÷ 计划执行次数 × 100。** 待确认项保留在分母，未测能力明确标注；完成度表示已取得结果的比例，不等同于通过率。Token 缺失保持未知，部分采集显示 `≥`，离线校准标为不适用。详见 [评分与可视化说明](docs/guides/ASSESSMENT_VISUALIZATION.zh-CN.md)。
 
-如果你的目标是「部署一个评审其他 Agent 的 Agent」，安装后直接看 [主动评测快速开始](#active-assessment)。也可使用 [仓库自动部署评测](docs/REPOSITORY_ASSESSMENT.zh-CN.md)：提交公开 GitHub 地址，按配方、部署清单或 Python 自动适配接入，完成拉取、构建、部署和独立题集评测。
+## 项目处理哪些任务
 
-- [1. 安装并启动](#start)
-- [2. 跑通第一个示例](#first-run)
-- [3. 接入自己的数据](#own-data)
-- [4. 体验代码修复和文档验收](#task-examples)
-- [5. 导出、比较和保存数据](#reports)
-- [6. 常见问题](#faq)
-- [7. 进阶接口与开发](#advanced)
-- [8. 主动评测与服务部署](#active-assessment)
+| 任务 | 输入与处理 | 结果与入口 |
+| --- | --- | --- |
+| 主动评测 Agent 能力 | 向登记的 HTTP Agent 发送题集，按独立 Profile 验收；通用模板含 12 类任务、7 个维度，覆盖计算、结构化输出、检索引用、指令遵循、拒绝编造、多轮交互及抗干扰 | 题集评分、能力维度、预算对比、案例证据；[通用评测](docs/guides/GENERAL_ASSESSMENT.zh-CN.md) |
+| 仓库部署与源码评测 | 拉取公开 GitHub 仓库并固定版本，通过部署清单、smolagents 配方或 Python LLM 自动适配构建目标；可根据源码规划题集 | 构建过程、接入检查、源码关联与能力报告；[仓库评测](docs/guides/REPOSITORY_ASSESSMENT.zh-CN.md)、[源码规划](docs/guides/SOURCE_GUIDED_ASSESSMENT.zh-CN.md) |
+| 已有运行轨迹评审 | 导入 OpenCode 会话 JSON、通用轨迹或包含任务定义、diff、验证结果的 bundle | 最终结果、执行轨迹、变更、独立验证与行为诊断；[轨迹与验证材料](docs/reference-assets/skills/opencode-trace-review/references/advanced.md) |
+| 自定义业务验收 | 用 Profile 声明字段、预期值、资源阈值和工具约束；复杂条件接入独立评估器 | [发票提取](docs/examples/invoice/README.md)、[调研](docs/examples/research/README.md)、[输入输出模型评审](docs/examples/llm-review/README.md)模板 |
+| 代码修复验证 | 对固定修复场景运行 Docker 中的 baseline / final 测试，对比 JUnit、diff 和代码状态 | 通过、失败、回归或证据不足；[代码修复示例](docs/examples/code_repair/README.md) |
+| 文档转换验收 | 检查固定两页 PDF 的 Markdown / JSON 候选，核对正文、标题、阅读顺序、表格与格式一致性 | 7 项必需检查及错误定位；当前不是任意 PDF / OCR 评估器；[文档转换示例](docs/examples/document_conversion/README.md) |
+| 用量与回归分析 | 记录逐次模型、工具、耗时及输入 / 输出 Token，比较相同题集下的预算和版本变化 | 完整性标记、用量来源、回归与报告导出；[调用记录](docs/guides/TARGET_TELEMETRY.zh-CN.md)、[用量采集](docs/guides/PROVIDER_TELEMETRY.zh-CN.md) |
 
-> 当前包版本为 0.3.0。2026-10-05 已重建并验证 wheel 与 skill 内置引擎，包含代码修复、文档评估、主动评测、Token 完整性统计及 Python 仓库自动适配。下面的源码启动方式同时提供可运行的示例与部署配置。
+主动评测目标需支持 `agent-review/target-v1` 接口并返回符合题目要求的 JSON。未知仓库能否接入取决于实际构建与适配检查。分数描述当前题集的观测表现，不能直接当作 Agent 总体能力排名。
+
+## 启动所需条件
+
+| 条件 | 基础启动 | 额外场景 |
+| --- | --- | --- |
+| Python **3.11+** | 必需；以下命令使用 3.12 | uv 可管理 Python 版本 |
+| `uv` | 以下安装与 CLI 命令需要 | 管理依赖与虚拟环境 |
+| Node.js **22** 与 npm | 从源码构建网页需要；与项目 Docker 构建版本一致 | 已构建 wheel 自带网页，安装 wheel 后运行无需 Node.js |
+| 网络 | 首次下载 Python、npm 依赖时需要 | 拉取仓库、下载镜像、访问模型 API 时也需要 |
+| 可写数据目录、空闲端口 | 默认数据目录 `.agent-review/`，网页端口 `8765` | 控制 Agent 示例还使用 `9081` |
+| Git + 已启动的 Docker | 基础浏览、导入和控制示例无需 | 仓库自动部署需要；固定代码修复验证需要 Docker 与 verifier 镜像 |
+| 模型 API 地址、模型 ID、密钥 | 基础浏览与离线示例无需 | 真实模型评测、LLM 评审、未知 Python 仓库自动适配需要 |
+| OpenCode | 导入现有 JSON 无需 | `import-session` 需要本机 OpenCode 及可访问的会话 |
+
+以下命令适用于 macOS / Linux，均在项目根目录执行。首次安装可参考 [uv 安装说明](https://docs.astral.sh/uv/getting-started/installation/)；前端构建环境可从 [Node.js 官网](https://nodejs.org/en/download) 获取。
+
+## 安装与启动
 
 <a id="start"></a>
-## 1. 安装并启动
 
-### 准备环境
+### 1. 安装依赖并构建网页
 
-| 工具 | 用途 | 如何准备 |
-| --- | --- | --- |
-| uv | 管理 Python 环境和项目依赖 | 按 [uv 官方安装指南](https://docs.astral.sh/uv/getting-started/installation/) 安装 |
-| Python 3.11+ | 运行后端 | 本文使用 3.12；uv 可在需要时下载，见 [Python 管理说明](https://docs.astral.sh/uv/guides/install-python/) |
-| Node.js 和 npm | 从源码构建网页 | 使用 Node.js 20+；可从 [Node.js 官网](https://nodejs.org/en/download) 安装当前 LTS 版本 |
-
-以下命令以 macOS/Linux 终端为例，本项目现有本机验收环境为 macOS。安装后重新打开终端，确认能运行：
+已有项目文件时直接进入其根目录；尚未下载时先克隆：
 
 ```sh
-uv --version
-node --version
-npm --version
-```
-
-### 安装项目依赖并构建网页
-
-如果尚未取得项目文件，可通过已配置 SSH 权限的 GitHub 账号克隆：
-
-```sh
-git clone git@github.com:maomaomiaomiao1234/Agent_Inspect.git
-```
-
-进入包含 `pyproject.toml` 和 `web/` 的项目根目录。把第一行替换为你的实际路径；后文所有命令都在这个目录执行。
-
-```sh
-cd /path/to/Agent_Inspect
+git clone https://github.com/maomaomiaomiao1234/Agent_Inspect.git
+cd Agent_Inspect
 uv sync --python 3.12
 npm --prefix web ci
 uv run python scripts/build_web.py
 ```
 
-首次安装需要联网下载依赖。看到 `Packaged web assets: ...` 表示网页已构建完成。
+看到 `Packaged web assets: ...` 表示网页已构建到 Python 包中。更新前端源码后重新执行构建命令。
 
-### 启动本地服务
-
-```sh
-uv run agent-review serve --data-dir ./.agent-review --port 8765
-```
-
-等终端显示服务启动成功后，在浏览器打开 **[http://127.0.0.1:8765](http://127.0.0.1:8765)**。
-
-- 保持这个终端运行；按 `Ctrl+C` 停止服务。
-- 后面需要执行 CLI 命令时，另开一个终端并进入同一项目根目录。
-- 本文统一使用 `--data-dir ./.agent-review`。服务和导入命令必须指向同一数据目录，网页才能看到导入结果。
-- 下次使用只需重新运行启动命令；更新前端源码后再执行构建命令。
-
-### 配置 `.env`（需要模型或主动评测时）
-
-仓库提供了不含密钥的模板 [`.env.example`](.env.example)。复制到本机后再填写值：
+### 2. 启动基础服务
 
 ```sh
-cp .env.example .env
-chmod 600 .env
+uv run agent-review serve \
+  --data-dir ./.agent-review \
+  --port 8765 \
+  --disable-repository-builds
 ```
 
-模板中的 DeepSeek 示例使用 `https://api.deepseek.com` 和 `deepseek-flash`。最小配置如下：
+打开 **[http://127.0.0.1:8765](http://127.0.0.1:8765)**。保持终端运行，按 `Ctrl+C` 停止。下次只需重新运行启动命令。
 
-```dotenv
-AGENT_REVIEW_LLM_API_URL=https://api.deepseek.com
-AGENT_REVIEW_LLM_MODEL=deepseek-flash
-AGENT_REVIEW_LLM_TOKEN=填写你的DeepSeek密钥
+- 主动评测页面：[http://127.0.0.1:8765/#/assessments](http://127.0.0.1:8765/#/assessments)
+- 健康检查：[http://127.0.0.1:8765/api/health](http://127.0.0.1:8765/api/health)
+- API 文档：[http://127.0.0.1:8765/docs](http://127.0.0.1:8765/docs)
 
-SMOL_MODEL_API_BASE=https://api.deepseek.com
-SMOL_MODEL_ID=deepseek-flash
-SMOL_MODEL_API_KEY=填写你的DeepSeek密钥
-```
+基础启动无需 `.env`。`serve` 会读取当前目录已有的 `.env`，也可用 `--env-file /path/to/config.env` 指定文件；进程环境变量优先。这里显式关闭仓库构建，因此无需 Docker。
 
-网页仓库评测会自动选择完整的一组模型配置：优先 `AGENT_REVIEW_TARGET_API_URL/MODEL/TOKEN`，其次有密钥的 `SMOL_MODEL_*`，否则复用 `AGENT_REVIEW_LLM_API_URL/MODEL/TOKEN`。你已有 `AGENT_REVIEW_LLM_*` 或 `SMOL_MODEL_*` 配置时，无需再填写网页变量映射。不同组的 URL、模型和密钥不会混用；专用 TARGET 配置只填了一部分时会提示补齐。
-
-`serve` 自动读取当前目录 `.env`，已有进程环境变量优先；模型密钥不发送到浏览器。启动网页只需：
-
-```sh
-uv run agent-review serve
-```
-
-适配器生成默认不发送 `max_tokens` / `max_completion_tokens`，由供应商默认设置决定输出长度；`.env` 的 `AGENT_REVIEW_ADAPTATION_MAX_OUTPUT_TOKENS` 留空或设为 `auto` 即可。DeepSeek 生成开启思考模式：`AGENT_REVIEW_ADAPTATION_THINKING=enabled`。生成默认超时 900 秒，网页显示当前生成上限和思考设置，操作见 [自动适配指南](docs/AUTO_ADAPTATION.zh-CN.md#生成输出与思考模式)。
-
-本机服务默认启用仓库构建，需要 Git 和运行中的 Docker。可在 `.env` 设置 `AGENT_REVIEW_ENABLE_REPOSITORY_BUILDS=false` 关闭。评测默认真实模型（`AGENT_REVIEW_REPOSITORY_BACKEND=openai`），配置缺失时明确提示，不会自动改用离线模式。独立启动 smolagents 示例进程仍需使用 `uv run --env-file .env ...`。
-
-`.env`、真实 API Key、服务令牌和其他本地凭据禁止提交；提交前可检查：
-
-```sh
-git check-ignore -v .env
-git ls-files .env
-```
-
-第一条应显示 `.gitignore` 规则，第二条不应输出任何内容。只提交 `.env.example`，不要执行 `git add -f .env`。
+## 跑通第一个评测
 
 <a id="first-run"></a>
-## 2. 跑通第一个示例
+<a id="active-assessment"></a>
 
-### 在网页中体验
+### 无模型密钥：运行控制 Agent
 
-1. 在运行列表点击 **「通过示例 · 聚焦修复」**，加载后进入详情。
-2. 确认验收结果为 **通过（pass）**。
-3. 查看「执行轨迹」了解调用过程；查看「最终变更」了解最终 diff；在「验证记录」核对支持通过结论的报告。
-4. 查看「指标与范围」，区分已观测、部分记录和未知的用量。
-5. 点击「导出报告」，保存这次运行的评估。
+安装、构建完成后，在两个终端中分别执行：
 
-再加载另外两个示例，观察证据变化如何影响结论：
+**终端 A：**
 
-| 网页示例 | CLI 场景名 | 预期结果 | 原因 |
-| --- | --- | --- | --- |
-| 通过示例 · 聚焦修复 | `focused` | `pass` | 有匹配最终状态和测试集合的通过报告 |
-| 待补证据示例 · 反复定位 | `iterative` | `inconclusive` | 最后修改后缺少最终验收证据 |
-| 失败示例 · 修复失败 | `failed` | `fail` | 有匹配最终状态和测试集合的失败报告 |
+```sh
+uv run python examples/assessment/mock_agent.py --port 9081
+```
 
-**这三个示例的日志和验证报告均为合成材料**，用于熟悉导入、判定和展示流程。加载它们不会运行真实 Agent 或调用模型；重复加载会复用已有运行。
+**终端 B：**
 
-### 也可以用命令行体验
+```sh
+uv run agent-review serve \
+  --data-dir ./.agent-review \
+  --targets examples/assessment/targets.json \
+  --port 8765 \
+  --disable-repository-builds
+```
+
+如果基础服务已占用 `8765`，先在其终端按 `Ctrl+C` 停止，再用上述命令重新启动。
+
+打开主动评测页面，选择 `control`，上传 [examples/assessment/suite.json](examples/assessment/suite.json)，点击「开始评测」。4 个案例 × 2 档预算 × 2 次重复，共 **16 次执行，预期 16 次通过**。切换 `incorrect` 可观察失败报告；`leaky` 可观察会话隔离失败。
+
+控制 Agent 是确定性校准程序，不调用模型；其分数用于验证评测流程。完整说明见 [控制 Agent 示例](docs/examples/assessment/README.md) 和 [主动评测接入指南](docs/guides/ACTIVE_ASSESSMENT.zh-CN.md)。
+
+### 仅查看轨迹与报告
+
+另开终端，将内置合成轨迹导入到服务使用的同一数据目录：
 
 ```sh
 uv run agent-review demo --scenario all --data-dir ./.agent-review
 uv run agent-review list --data-dir ./.agent-review
 ```
 
-命令会输出每条运行的 `run_id` 和结果。刷新网页即可查看；也可以直接导出：
+刷新「运行记录」，可查看通过、失败和待补证据三种示例。也可点击网页的示例按钮加载。导入自己的 OpenCode / 通用 JSON 或创建业务模板：
 
 ```sh
-uv run agent-review report RUN_ID --data-dir ./.agent-review --output report.md
-```
-
-**`RUN_ID` 是占位符**：请换成导入命令或 `list` 返回的完整 `run_...` 标识。`report.md` 保存在当前目录。省略 `demo` 的 `--scenario` 时只加载原有的两个示例，体验全部场景请保留 `all`。
-
-### 如何理解结果
-
-| 结果 | 含义 | 下一步 |
-| --- | --- | --- |
-| `pass` · 通过 | 已提供材料满足当前必需验收条件 | 检查标准是否覆盖你的真实需求 |
-| `fail` · 未通过 | 至少一项必需条件有失败证据 | 打开对应检查，定位失败证据 |
-| `inconclusive` · 待补证据 | 材料或验证不足，无法确认通过 | 补充参考、完整记录或独立验证结果 |
-
-验收范围由规则和材料决定。命令退出码为 0、Agent 自报完成、没有诊断告警，都不能单独证明任务成功。缺失的 Token 或费用保持未知；单次运行也不能推出 Agent 的总体能力排名。
-
-<a id="own-data"></a>
-## 3. 接入自己的数据
-
-先根据手上的材料选择入口：
-
-| 你已有的材料 | 建议入口 | 还需要准备什么 |
-| --- | --- | --- |
-| OpenCode 导出的会话 JSON | [A. 导入 OpenCode](#opencode) | 若要严格验收代码结果，补充任务定义、diff 和独立验证报告 |
-| 任意 Agent 的输入、输出、工具记录 | [B. 通用任务模板](#generic) | 转成通用 JSON，并定义 Profile 验收规则 |
-| 只有任务输入和最终答案 | [C. 输入输出评审](#llm-review) | 评审标准、参考材料；调用模型时需要 API 配置 |
-| 代码修复或 PDF 转换结果 | [内置专项示例](#task-examples) | 先理解固定示例，再为真实任务接入验证器或参考标注 |
-
-几个会用到的名称：**Trace** 是运行记录和最终输出；**Profile** 是“怎样才算完成”的规则文件；**Run ID** 是导入后用于查询、评审和导出的标识；**Bundle** 是可重新导入的运行材料包。
-
-<a id="opencode"></a>
-### A. 我有 OpenCode 会话
-
-**已有导出文件：** 点击网页「导入运行」，选择「轨迹 JSON 文件」，导入后打开详情。也可以执行：
-
-```sh
-uv run agent-review import session.json --data-dir ./.agent-review
-```
-
-**还没有导出文件：** 在安装了 OpenCode、且能访问目标会话的本机终端中执行，替换实际 session ID：
-
-```sh
-opencode session list
-opencode export ses_YOUR_SESSION --pure > session.json
-uv run agent-review import session.json --data-dir ./.agent-review
-```
-
-也可由本工具导出并导入指定会话：
-
-```sh
-uv run agent-review import-session ses_YOUR_SESSION --data-dir ./.agent-review
-```
-
-项目已用 OpenCode 1.18.18 验证原生导入链路；其他版本未全面验证。分析已有 JSON 不要求安装 OpenCode。`import-session` 只导出指定会话，不启动模型。
-
-一个会话包含多个任务时，可用 `import` 的 `--first-message msg_START --last-message msg_END` 限定范围，起止消息均包含在内。未限定时会评估整个导出会话，耗时可能包含用户等待。
-
-**要判断代码任务是否真正完成：** 在网页导入时同时提供 Task Manifest（任务定义）、最终 diff 和外部 JUnit 报告，或导入包含这些材料的 bundle。JUnit 上传支持单项测试检查；多项检查用结构化运行包。报告必须对应任务声明的最终代码状态和测试集合。导入器不会重新运行上传的测试，也不认证报告真实性。详见 [任务定义与验证材料](skills/opencode-trace-review/references/advanced.md#task-and-verification-materials)。
-
-<a id="generic"></a>
-### B. 我想评估自己的提取、调研或业务任务
-
-从发票提取模板开始，先原样跑通，再修改为自己的任务：
-
-```sh
+uv run agent-review import /path/to/session.json --data-dir ./.agent-review
 uv run agent-review init-task ./my-task --template invoice
-uv run agent-review import ./my-task/trace.json --profile ./my-task/profile.json --data-dir ./.agent-review
+uv run agent-review import ./my-task/trace.json \
+  --profile ./my-task/profile.json --data-dir ./.agent-review
 ```
 
-原样模板使用合成材料，预期结果为 `pass`。记录返回的 Run ID，刷新网页查看「最终结果」和「任务验收」。模板目录已存在且非空时，请换一个新目录。
+`init-task` 也支持 `research`、`llm-review` 模板。模板材料是合成示例，评测自己的任务时需替换输入、输出、参考和验收规则。
 
-接下来修改这些文件：
+## 评测真实 Agent
 
-| 文件 | 你需要填写的内容 |
-| --- | --- |
-| `my-task/trace.json` | 实际任务 `task_prompt`、最终 `output`、可见 `events`、独立参考 `artifacts`；真实任务将 `demo` 改为 `false` |
-| `my-task/profile.json` | 必需字段、预期值、资源阈值、工具使用约束等验收条件 |
-| `my-task/external.profile.json`、`evaluator.py` | 可选：复杂业务需要自己的程序或人工核验时使用 |
+### 网页拉取、部署并评测仓库
 
-修改后重新运行上面的 `import` 命令，并使用这次返回的 Run ID。网页也支持同时上传轨迹和「任务评估 Profile (.json)」。
-
-- 只有输入输出时，`events` 可以为空，`coverage` 保留 `partial`；未采集的用量不要填写为 0。
-- 同时更新模板中的标题、框架名、源运行 ID、模型名和时间；删除无法确认的可选示例值，避免把合成用量或时间带入真实报告。
-- 替换模板的全部示例参考数据和阈值；参考答案应由验收方提供。
-- `artifacts` 中需要放入实际可见材料；导入器不会自动打开其中的本地路径或 URL。
-- `research` 模板可检查调研交付结构，但事实核验需要外部结果，因此直接导入通常为 `inconclusive`。
-
-**只改验收规则时**，可以评估已经导入的运行，保存新的评估版本：
+先启动 Docker，确认 `git --version`、`docker info` 可运行。在尚未创建 `.env` 时复制 [配置模板](.env.example)，填入实际模型配置：
 
 ```sh
-uv run agent-review evaluate RUN_ID --profile ./my-task/profile.json --data-dir ./.agent-review
+cp .env.example .env
 ```
 
-字段存在、长度达标等规则只能证明对应条件满足。需要判断业务正确性时，接入独立参考、人工复核或专项评估器。完整格式与可运行的 external 示例见 [通用轨迹与自定义任务接口](skills/opencode-trace-review/references/custom-tasks.md)。
+配置示例（模板中已有两组模型配置，均需替换为供应商支持的值）：
 
-<a id="llm-review"></a>
-### C. 我只有输入输出，希望让模型评审
+```dotenv
+AGENT_REVIEW_LLM_API_URL=https://你的模型服务/v1
+AGENT_REVIEW_LLM_MODEL=你的模型ID
+AGENT_REVIEW_LLM_TOKEN=你的API密钥
 
-先创建专用模板：
+SMOL_MODEL_API_BASE=https://你的模型服务/v1
+SMOL_MODEL_ID=你的模型ID
+SMOL_MODEL_API_KEY=你的API密钥
+
+AGENT_REVIEW_REPOSITORY_BACKEND=openai
+```
+
+启动服务并启用仓库构建：
 
 ```sh
-uv run agent-review init-task ./my-review --template llm-review
+uv run agent-review serve \
+  --data-dir ./.agent-review --port 8765 \
+  --enable-repository-builds
 ```
 
-编辑 `my-review/trace.json` 的输入、答案和参考材料，修改 `my-review/profile.json` 的评审标准。真实任务将 `demo` 改为 `false`，然后导入：
+在「主动评测」页面填写公开 GitHub 仓库地址，配置版本、题集、预算和重复次数，点击「拉取、部署并评测」。未知 Python 仓库的自动适配会把相关源码片段发送给配置的模型，并可能产生模型调用费用。详见 [仓库评测指南](docs/guides/REPOSITORY_ASSESSMENT.zh-CN.md) 和 [自动适配范围](docs/guides/AUTO_ADAPTATION.zh-CN.md)。
+
+目标模型配置支持 `AGENT_REVIEW_TARGET_API_URL/MODEL/TOKEN`、`SMOL_MODEL_API_BASE/ID/API_KEY` 和 `AGENT_REVIEW_LLM_API_URL/MODEL/TOKEN`；按该顺序选择配置组，不混用不同组的值，所选组缺项会提示补齐。若只使用评审模型这一组，删除模板中的三项 `SMOL_MODEL_*`，让目标复用 `AGENT_REVIEW_LLM_*`。密钥保存在本机环境中，`.env` 已被 Git 忽略。
+
+### 接入已有 Agent 服务
+
+按 [target-v1 协议](docs/guides/ACTIVE_ASSESSMENT.zh-CN.md#3-被测-agent-的-http-协议) 提供任务与健康接口，在目标登记 JSON 中配置 endpoint、路径和鉴权环境变量名，然后启动：
 
 ```sh
-uv run agent-review import ./my-review/trace.json --profile ./my-review/profile.json --data-dir ./.agent-review
+uv run agent-review serve \
+  --data-dir ./.agent-review \
+  --targets /path/to/targets.json \
+  --port 8765 --disable-repository-builds
 ```
 
-在网页打开这次运行的 **「LLM 评审」**：
+从页面选择通用模板生成题集，或上传自己的 Suite JSON。smolagents 的真实模型与 offline 接入方法见 [示例说明](docs/examples/smolagents/README.md)。
 
-1. 填写兼容 Chat Completions 的 API 地址、模型名称和访问 Token。
-2. 核对评审标准及将要发送的任务材料。
-3. 点击 **「发送材料并评审」**，等待逐项结果。
-
-导入本身不会调用模型；点击发送才会把任务输入、输出、内嵌材料、可见事件和规则发送到所填接口，可能产生费用。Token 不写入报告或浏览器存储，请勿写入项目文件。当前评审处理文本和 JSON；图片、文件或 URL 的内容需要先提取为可见材料。
-
-模型评审处理 Profile 中的 `external` 条目，结论参与验收并标明模型来源；本地规则失败仍保留。没有可靠依据时可能返回未知。命令行配置、接口兼容选项和 HTTP/Python 用法见 [大模型评审指南](skills/opencode-trace-review/references/llm-review.md)。
-
-原生 OpenCode 代码轨迹使用另一套可选 Scout Judge，配置方法见 [进阶 Judge 说明](skills/opencode-trace-review/references/advanced.md#optional-judge)；该 Judge 提供解释，不覆盖确定性验收结果。
-
-<a id="task-examples"></a>
-## 4. 体验代码修复和文档验收
-
-这两组示例用于了解专项验收流程。候选由内置模拟器提供，尚未接入真实 Agent、SWE-bench 或 OmniDocBench。
-
-### 代码修复：在 Docker 中实际运行固定测试
-
-需要启动 Docker，并准备本地镜像；仅缺少镜像时运行下载命令：
+### 导出结果
 
 ```sh
-docker pull python:3.12-slim
+# RUN_ID、ASSESSMENT_ID 替换为 list / assessments 显示的实际 ID
+uv run agent-review report RUN_ID \
+  --data-dir ./.agent-review --output report.md
+uv run agent-review assessment-report ASSESSMENT_ID \
+  --data-dir ./.agent-review --format markdown --output assessment.md
 ```
 
-随后运行：
+主动评测导出也支持 `--format json`、`--format bundle`。CLI 与网页必须使用同一 `--data-dir` 才能查看同一批记录。
+
+## 开发、目录与文档
+
+前后端分别开发时，先按基础启动命令运行后端，再另开终端：
 
 ```sh
-uv run agent-review code-repair --candidate all --data-dir ./.agent-review
+npm --prefix web run dev
 ```
 
-| 候选 | 预期结果 | 含义 |
-| --- | --- | --- |
-| `correct` | `pass` | 正确修复，通过三项固定测试 |
-| `incorrect` | `fail` | 边界缺陷仍然存在 |
-| `regression` | `fail` | 修复边界时破坏了原本正常的行为 |
-| `timeout` | `inconclusive` | 达到 10 秒执行限制，验证未完成 |
+访问 Vite 终端显示的地址（默认 `http://127.0.0.1:5173`），`/api` 请求会代理到 `8765`。此模式前端修改自动刷新；正式使用前运行 `uv run python scripts/build_web.py`。
 
-刷新网页，查看最终代码、diff、基线和最终测试报告。**候选是模拟的，Docker 测试是实际执行的。** Runner 只运行这些内置候选，使用受限、无网络的容器，不接受任意仓库或用户命令，也不自动拉取镜像。
-
-如果只想看历史测试记录，可直接导入 [examples/code_repair](examples/code_repair/README.md) 中的 bundle，无需 Docker，也不会重跑测试。真实仓库需由你自己的 CI 或独立验证器生成报告后导入。实现和验收记录见 [Task 2 验证说明](TASK2_VALIDATION.zh-CN.md)。
-
-### 文档转换：检查固定 PDF 的 Markdown / JSON 输出
-
-无需 Docker 或额外 PDF 依赖。在网页点击「文档示例 · 正确」，或执行：
-
-```sh
-uv run agent-review document-conversion --candidate all --data-dir ./.agent-review
+```text
+Agent_Inspect/
+├── README.md                  # 项目入口、截图与启动命令
+├── docs/                      # 所有项目 Markdown 的统一文档目录
+│   ├── README.md              # 分类索引与原路径对照
+│   ├── guides/                # 当前功能与接入指南
+│   ├── examples/              # 示例说明，资源仍在根 examples/
+│   ├── validation/            # 验收记录
+│   ├── planning/              # 实施计划与开发交接
+│   ├── reviews/               # 历史代码评审
+│   ├── archive/               # 整理前的完整 README
+│   ├── reference-assets/      # 运行时、Skill、历史证据的文档副本
+│   └── images/                # README 运行截图
+├── src/agent_trace_review/    # 后端、CLI、评估器与包内资源
+├── web/                       # React 前端与端到端测试
+├── examples/                  # 可运行 Agent、题集、模板与历史证据
+├── scripts/                   # 构建、打包与验证脚本
+├── tests/                     # Python 测试
+├── deploy/                    # Compose、目标登记与部署依赖
+└── skills/                    # 可独立打包的评审 Skill
 ```
 
-| 候选 | 预期结果 | 检查到的差异 |
-| --- | --- | --- |
-| `correct` | `pass` | 七项必需检查全通过 |
-| `omitted` | `fail` | 正文内容遗漏 |
-| `table_error` | `fail` | 表格单元格错误，可定位行列 |
-| `order_error` | `fail` | 正文顺序错误 |
-| `missing_reference` | `inconclusive` | 缺少独立参考，无法验收 |
+**完整文档从 [docs/README.md](docs/README.md) 开始。** 整理覆盖原有 50 份 Markdown：38 份说明文档迁移、11 份运行 / Skill / 证据文件保留原件并归档副本、旧 README 完整归档。第三方依赖、构建产物、缓存和本地评测数据不纳入文档归档。
 
-详情页可阅读 Markdown、展开 JSON、下载源 PDF，并查看各项验收证据。**源 PDF 为自制文档，转换输出是模拟候选，固定评估器在本地实际执行。**
-
-当前仅支持随项目提供的固定 PDF 和标注格式。你的其他 PDF 需要先准备独立参考标注、适配输出格式和专项评估器；目前没有“上传任意 PDF 自动转换并评分”的流程。OCR、公式、合并单元格和版式保真尚未覆盖。
-
-已有材料见 [文档示例目录](examples/document_conversion/README.md)，验收记录见 [Task 3 验证说明](TASK3_VALIDATION.zh-CN.md)。如果导入的是文档 bundle，导入后需点击网页「运行固定文档检查」，或执行：
-
-```sh
-uv run agent-review document-evaluate RUN_ID --data-dir ./.agent-review
-```
-
-<a id="reports"></a>
-## 5. 导出、比较和保存数据
-
-### 导出报告或可移植材料
-
-把 `RUN_ID` 替换为实际值：
-
-```sh
-# 给人阅读的评估报告
-uv run agent-review report RUN_ID --data-dir ./.agent-review --output report.md
-
-# 当前运行和选中的评估结果，便于程序处理
-uv run agent-review report RUN_ID --data-dir ./.agent-review --format json --output report.json
-
-# 可重新导入的源材料包
-uv run agent-review report RUN_ID --data-dir ./.agent-review --format bundle --output run.bundle.json
-```
-
-`report` 默认选择最新评估，可用 `--revision REVISION_ID` 指定已保存版本。Bundle 不包含完整评估历史；自定义 Profile 或外部评估结果应另行保留，重导入后按相应流程重新验收。文档示例使用 `document-evaluate` 重跑固定检查。
-
-### 比较两次运行
-
-```sh
-uv run agent-review compare RUN_ID_A RUN_ID_B --data-dir ./.agent-review
-```
-
-请使用同一任务、基线、环境、测试集合和预算下的运行。条件不完整或不同，工具只提供描述性对照。比较不会生成任意的 0–100 能力总分。
-
-### 数据存在哪里
-
-本教程的数据位于项目根目录的 `.agent-review/`，包含 `review.sqlite3` 和 `artifacts/`。停止服务及其他读写命令后，复制整个目录即可保留本地数据；只复制数据库会遗漏工件。
-
-如需隔离不同实验，给所有相关命令传入同一个新的绝对 `--data-dir`。CLI 导入后刷新网页；目录不一致时，网页看不到那次运行。
-
-基础分析保存在本机。显式执行 LLM 评审或主动评测会向配置的接口发送相应任务材料。导入会对常见密钥脱敏，但业务内容仍可能敏感；分享报告或 bundle 前请检查内容。服务默认监听 `127.0.0.1`；远程部署须配置访问令牌，当前任务队列使用单个服务进程。
-
-<a id="faq"></a>
-## 6. 常见问题
-
-| 问题 | 处理方法 |
-| --- | --- |
-| `uv`、`node` 或 `npm` 提示找不到命令 | 按第一节安装，并重新打开终端检查版本 |
-| 网页无法连接 | 确认 `serve` 仍在运行、终端没有报错，使用它实际监听的端口 |
-| 8765 端口被占用 | 改用 `uv run agent-review serve --data-dir ./.agent-review --port 18765`，访问 `http://127.0.0.1:18765` |
-| API 能访问，但页面缺失或没有新示例按钮 | 在根目录重新执行 `uv run python scripts/build_web.py`，重启服务并刷新页面 |
-| 导入成功，但网页找不到运行 | 确认两个终端在同一项目目录，且 `--data-dir` 一致，然后刷新页面 |
-| `RUN_ID` 查询失败 | 使用 `list` 返回的实际 `run_...` 标识，检查数据目录是否一致 |
-| 导入后显示待补证据 | 查看未完成的必需检查；补充 Profile、参考材料或独立验证，文档示例需显式重评 |
-| 原始文本、任意框架日志或 PDF 上传失败 | 导入入口接受规定格式的 JSON；用模板转换运行材料，PDF 文件本身不能作为轨迹 JSON 导入 |
-| `init-task` 拒绝创建目录 | 目标目录非空；换一个新目录，或继续编辑已有模板 |
-| 代码示例提示 Docker 不可用或镜像缺失 | 启动 Docker，准备 `python:3.12-slim`；也可先导入历史 bundle 查看报告 |
-| 想体验但没有 API Token | 使用第一组示例、本地 Profile 或文档示例即可；调用外部模型时才需要凭据 |
-| wheel 或 skill 中找不到新命令 | 更新到 2026-10-03 重建的引擎，或按第一节从最新源码启动；仅核对 0.3.0 版本号不足以区分历史包 |
-
-<a id="advanced"></a>
-## 7. 进阶接口与开发
-
-日常使用读到这里已经足够。需要接入自己的系统时，可继续查看：
-
-| 目标 | 文档或入口 |
-| --- | --- |
-| 通用 Trace、Profile、跨语言评估器、generic/2 代码证据包 | [自定义任务接口](skills/opencode-trace-review/references/custom-tasks.md) |
-| API + Token 文本评审 | [LLM 评审接口](skills/opencode-trace-review/references/llm-review.md) |
-| OpenCode Task Manifest、独立报告、Scout Judge | [进阶工作流](skills/opencode-trace-review/references/advanced.md) |
-| HTTP API | 服务启动后打开 [交互式接口文档](http://127.0.0.1:8765/docs)；写请求要求 `X-Review-Request: 1` |
-| 机器可读的数据合同 | `uv run agent-review schema --output schema.json` |
-| 全部命令及参数 | `uv run agent-review --help`，或在子命令后加 `--help` |
-| Skill 形式使用 | [opencode-trace-review](skills/opencode-trace-review/SKILL.md)；内置引擎已刷新，主动评测示例见下节 |
-| 产品设计与开发交接 | [实施计划](IMPLEMENTATION_PLAN.zh-CN.md)、[handoff](HANDOFF.zh-CN.md) |
-
-### 开发与验证
-
-```sh
-uv sync --python 3.12 --extra dev
-uv run pytest -q
-uv run ruff check src scripts tests
-uv run python scripts/build_web.py
-```
-
-可选依赖：`--extra scout` 用于原生代码轨迹 Judge，`--extra pdf-fixtures` 用于重建/核对固定 PDF。同步时同时列出需要保留的 extra。日常文档示例验收无需安装 `pdf-fixtures`。
-
-前端开发使用 `npm --prefix web run dev`，后端保持在 8765 端口。浏览器测试需要 Chrome；先启动使用独立测试目录的服务，再在另一终端运行测试：
-
-```sh
-uv run agent-review serve --data-dir /tmp/agent-review-e2e --port 8765
-```
-
-```sh
-npm --prefix web run test:e2e
-```
-
-### 生成新的分发包
-
-```sh
-uv run python scripts/build_web.py
-uv build --wheel
-uv run python scripts/check_package.py dist/agent_trace_review-0.3.0-py3-none-any.whl
-uv run python scripts/package_skill.py
-```
-
-构建的 wheel 包含网页，安装后运行服务无需 Node.js。源码继续修改后，需执行最后一步刷新 Skill 内置引擎；启动器以 wheel SHA-256 区分同版本的不同构建。
-
-项目核心代码位于 `src/agent_trace_review/`，网页位于 `web/src/`，验证脚本位于 `scripts/`。主动评测服务采用单进程任务队列，支持登记的 HTTP 目标、固定 Docker 镜像，以及受支持仓库的自动构建与部署；真实任务需要明确的题集和独立标准。
-
-<a id="active-assessment"></a>
-## 8. 主动评测与服务部署
-
-安装并构建网页后，先启动内置控制 Agent：
-
-```sh
-uv run python examples/assessment/mock_agent.py --port 9081
-```
-
-另一个终端启动评审服务：
-
-```sh
-uv run agent-review serve --data-dir ./review-data \
-  --targets examples/assessment/targets.json --port 8765
-```
-
-打开 [主动评测页面](http://127.0.0.1:8765/#/assessments)，选择 `control`，上传 `examples/assessment/suite.json`，点击「开始评测」。这会实际发起 HTTP 请求；4 个案例 × 2 个预算 × 2 次重复应得到 **16/16 通过**。切换 `incorrect`、`noop`、`missing`、`leaky` 可以分别校准错误答案、空答、证据不足和会话泄漏。控制 Agent 没有调用模型，所有记录标记为示例。
-
-已支持的功能：
-
-| 功能 | 实现方式 |
-| --- | --- |
-| 仓库能力档案 | 只读扫描固定 Git commit，记录 README 声明、入口/依赖/环境线索、文件哈希和行号 |
-| 仓库自动部署评测 | 公开 GitHub URL → 固定源码 → Docker 构建 → 健康检查 → 题集评测 → 报告与资源回收 |
-| 主动任务验收 | 通过 `agent-review/target-v1` 服务协议实际发题，标准答案留在评审端 |
-| 自动生成测试文件 | smolagents 模板按案例数和种子生成题目、独立答案与 Profile；网页预览/下载后可直接评测 |
-| 多轮、记忆、隔离、鲁棒性 | 配置多轮题目、是否提供历史消息及专项 Profile，每个案例使用独立 session |
-| 能力声明验证 | 将档案 claim_id 与案例关联，区分已支持、未满足、证据不足和未测试 |
-| 预算与重复测量 | 对固定题集运行多档期限/Token 请求预算，记录结果和自报用量；缺失保持未知 |
-| 源码与版本回归 | 报告关联固定源码位置，对比一致题集/执行器下的逐案例变化 |
-| 服务与部署 | 异步任务、取消、重启中断恢复、访问令牌、Dockerfile/Compose、固定镜像启动检查和清理 |
-
-已部署目标可以继续由管理员登记；带清单的仓库与 smolagents 可直接自动构建。未知 Python 仓库可在真实模型模式下使用 [LLM 自动适配](docs/AUTO_ADAPTATION.zh-CN.md)，接入检查通过后运行独立题集。本机 `serve` 默认启用仓库入口。该流程记录固定提交、构建输入及实际镜像，离线校准不代表官方能力成绩。
-
-详细配置、协议、题集规则、API、Docker 部署和限制见 [主动评测指南](docs/ACTIVE_ASSESSMENT.zh-CN.md)；最新验证见 [仓库自动部署验收](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)，此前服务验收见 [专项记录](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)。
-
-要实际接入一个简易开源 Agent，可使用 [smolagents 起步示例](examples/smolagents/README.md)。它提供固定工具、独立 HTTP 适配器和六道题，配置你自己的 OpenAI 兼容模型后即可测试回答、多步工具、记忆与隔离；无密钥的 offline 模式仅用于框架接入校准。
-
-### 自动生成题集
-
-主动评测页面提供「自动生成测试文件」：默认通用任务模板，也可选择 smolagents 或源码规划；配置案例数（1–30）及随机种子，点击「生成测试文件」，可预览任务清单/验收规则、下载 JSON，或直接点击「开始评测」。生成过程不调用模型；实际评测会使用被测 Agent 的额度。通用模板还支持重复次数和并发设置。
-
-CLI 可生成同样的文件：
-
-```sh
-uv run agent-review generate-suite --template smolagents --cases 12 --seed 42 \
-  --output ./my-tests/suite.json
-
-uv run agent-review generate-suite --template general --cases 12 --seed 42 \
-  --attempts 2 --concurrency 3 --output ./my-tests/general.json
-```
-
-smolagents 模板覆盖加减乘、两步计算、记忆、新会话隔离及公开输入干扰，要求示例工具和 JSON 输出约定。通用模板覆盖结构化输出、指令遵循、上下文检索与引用、信息不足与冲突、不可信输入、多轮任务及计算，无特定工具依赖。相同参数可复现相同题集，已有文件不会被覆盖。标准答案由程序独立计算；这些受控任务不代表任意 Agent 的完整业务能力。
+部署配置见 [主动评测服务部署指南](docs/guides/ACTIVE_ASSESSMENT.zh-CN.md)，历史验收与设计计划见文档索引。远程监听需要 `AGENT_REVIEW_SERVICE_TOKEN`；当前评测队列使用单个服务进程，不要让多个服务共用同一数据目录。

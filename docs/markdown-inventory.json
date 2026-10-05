@@ -1,0 +1,306 @@
+{
+  "organized_at": "2026-10-05",
+  "scope": "50 project-owned tracked Markdown files before reorganization; excludes dependencies, build products, local data and caches",
+  "documents": [
+    {
+      "source": "ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md",
+      "document": "docs/validation/ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "530a2928c0e391f96bbfc96c7524169a7542bcfdfbb67d6f0ca362f3f2d3e577"
+    },
+    {
+      "source": "ASSESSMENT_QUALITY_VALIDATION.zh-CN.md",
+      "document": "docs/validation/ASSESSMENT_QUALITY_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "94099b25038c39ab71a361f890b2092d5812c93858fdde6fc65bc1c2cf5b40a0"
+    },
+    {
+      "source": "AUTO_ADAPTATION_VALIDATION.zh-CN.md",
+      "document": "docs/validation/AUTO_ADAPTATION_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "ddda6d7ce3a660ba3c551b867241c72614894d610aca33d9b8f150bf20f3c40a"
+    },
+    {
+      "source": "GENERIC_EVALUATION_VALIDATION.md",
+      "document": "docs/validation/GENERIC_EVALUATION_VALIDATION.md",
+      "action": "moved",
+      "source_sha256": "f52f2d3fe2ca23123593b3f90f578447beeac66131f6b66c59fb45c109661fb2"
+    },
+    {
+      "source": "HANDOFF.zh-CN.md",
+      "document": "docs/planning/HANDOFF.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "c1ce376cc1f495193456e35c37b54f466e99ca5ce3695ad621bf3110aea6f771"
+    },
+    {
+      "source": "IMPLEMENTATION_PLAN.zh-CN.md",
+      "document": "docs/planning/IMPLEMENTATION_PLAN.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "713e226b322a08ea0e9102fb6cfd260f660bff46fb4225ee02aff0f350af36dd"
+    },
+    {
+      "source": "LLM_REVIEW_VALIDATION.md",
+      "document": "docs/validation/LLM_REVIEW_VALIDATION.md",
+      "action": "moved",
+      "source_sha256": "af08678119e8bb6237cfd0a0f26af41b9c99d5c756580c487fe607d80d13f3e8"
+    },
+    {
+      "source": "MODEL_GATEWAY_VALIDATION.zh-CN.md",
+      "document": "docs/validation/MODEL_GATEWAY_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "739e2d1f639cc41e9fe1219a4a0a89fb741b7f624c44dc45ee4c6e523555120c"
+    },
+    {
+      "source": "PROVIDER_TELEMETRY_VALIDATION.zh-CN.md",
+      "document": "docs/validation/PROVIDER_TELEMETRY_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "d0d64a51542bb88f440df62e4c924462af4416619e9a6da1ccfeee072df77342"
+    },
+    {
+      "source": "README.md",
+      "document": "docs/archive/README.previous.md",
+      "action": "archived",
+      "source_sha256": "9ce12a490eb9abb6cd6c6ed1d377f3fb328f9e5b4956afd526eba0a270b4e9c0"
+    },
+    {
+      "source": "REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md",
+      "document": "docs/validation/REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "3fd3668ea94fd4f994bcb26c548b733cfb91f9c32daf21d52c7aa8673d850c9d"
+    },
+    {
+      "source": "SKILL_VALIDATION.md",
+      "document": "docs/validation/SKILL_VALIDATION.md",
+      "action": "moved",
+      "source_sha256": "1c406c9fd4ca2e0a3bf29fac9ab6ca822b1a647e70a6abb93f344dfc324c1072"
+    },
+    {
+      "source": "SOURCE_GUIDED_VALIDATION.zh-CN.md",
+      "document": "docs/validation/SOURCE_GUIDED_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "b0fe4548b6a776f52656492b343b7b8fd4d88d99ccb3c55f2c945a5a7f8fddc0"
+    },
+    {
+      "source": "SUITE_GENERATION_VALIDATION.zh-CN.md",
+      "document": "docs/validation/SUITE_GENERATION_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "051fd982d0e237fa8205967765c8187ea8556b083fc0fa1392b2312fad38e835"
+    },
+    {
+      "source": "TARGET_TELEMETRY_VALIDATION.zh-CN.md",
+      "document": "docs/validation/TARGET_TELEMETRY_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "ea7ed551d6aac620a67c579e48fb34bda71fa37862e51e2dc8c27516039b3fd4"
+    },
+    {
+      "source": "TASK2_VALIDATION.zh-CN.md",
+      "document": "docs/validation/TASK2_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "091e98537a2d875d7ab8c52f0f31b38af126b4db2dc2d7f293b902d0e067af0e"
+    },
+    {
+      "source": "TASK3_VALIDATION.zh-CN.md",
+      "document": "docs/validation/TASK3_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "aff8375fb272bee609f04fc02c14a203933d4d9a926afa4d3f896b1ca83ab449"
+    },
+    {
+      "source": "TOKEN_ACCOUNTING_VALIDATION.zh-CN.md",
+      "document": "docs/validation/TOKEN_ACCOUNTING_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "7bd0fdd12f711636cbe5904cc07284383e17b56f4d292c168cc2d658982ec3e4"
+    },
+    {
+      "source": "VALIDATION.md",
+      "document": "docs/validation/VALIDATION.md",
+      "action": "moved",
+      "source_sha256": "34dd20fe0422092ea3c82cb1a55c00cb6fa98152ca3fea66abab6ed02e3b763b"
+    },
+    {
+      "source": "WEB_MODEL_ASSESSMENT_VALIDATION.zh-CN.md",
+      "document": "docs/validation/WEB_MODEL_ASSESSMENT_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "c6372961d813fda599ab6d49ea1d9994dd4360632539b3363054d4ceca83307d"
+    },
+    {
+      "source": "docs/ACTIVE_ASSESSMENT.zh-CN.md",
+      "document": "docs/guides/ACTIVE_ASSESSMENT.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "02943a7fcec23ab7cc34000a2eed66a323b6fb4c020e4cd845e657e7b4512632"
+    },
+    {
+      "source": "docs/ASSESSMENT_VISUALIZATION.zh-CN.md",
+      "document": "docs/guides/ASSESSMENT_VISUALIZATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "a2e040b5af8e90aa44553b2dc5cbf7d1494bb5c9b27c8930b47a5ddca7253ba4"
+    },
+    {
+      "source": "docs/AUTO_ADAPTATION.zh-CN.md",
+      "document": "docs/guides/AUTO_ADAPTATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "97c7624f588d572fea1ed4a6dc3c61e0ac28c40f473d00a6bb21978e5a6edb0b"
+    },
+    {
+      "source": "docs/GENERAL_ASSESSMENT.zh-CN.md",
+      "document": "docs/guides/GENERAL_ASSESSMENT.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "0e00e9d58d450e0c32e9ed1fc01a3e267a6581b10210a0489a480de1a5f8fa7a"
+    },
+    {
+      "source": "docs/MODEL_GATEWAY.zh-CN.md",
+      "document": "docs/guides/MODEL_GATEWAY.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "8a08c8b859cad39fb78b225253e265846e5d53c496f64f9d936631c5f0e8c21b"
+    },
+    {
+      "source": "docs/PROVIDER_TELEMETRY.zh-CN.md",
+      "document": "docs/guides/PROVIDER_TELEMETRY.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "9fcc91515e59526b31fcba601a572ed87f404858910191984d7df19f71ea0fdb"
+    },
+    {
+      "source": "docs/REPOSITORY_ASSESSMENT.zh-CN.md",
+      "document": "docs/guides/REPOSITORY_ASSESSMENT.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "8b2f57befb91ba0965435366e3b728d6456be2d77d3dd7d38e0a8a6ef92aa2e2"
+    },
+    {
+      "source": "docs/SOURCE_GUIDED_ASSESSMENT.zh-CN.md",
+      "document": "docs/guides/SOURCE_GUIDED_ASSESSMENT.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "6e85cefc6b997994be749d27063a69e2ec0be26c1b417e315817a5fd2e4a9ee2"
+    },
+    {
+      "source": "docs/TARGET_TELEMETRY.zh-CN.md",
+      "document": "docs/guides/TARGET_TELEMETRY.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "745df75af821a25016c05a428f47d40929348f42309a5de78e09bd984f415e51"
+    },
+    {
+      "source": "docs/TOKEN_USAGE_EXPLORATION.zh-CN.md",
+      "document": "docs/guides/TOKEN_USAGE_EXPLORATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "299220da10418e7f640d4ba4ceb631686c6cf3c065461d5b4eb5ceb5afe1c5c5"
+    },
+    {
+      "source": "examples/assessment/README.md",
+      "document": "docs/examples/assessment/README.md",
+      "action": "moved",
+      "source_sha256": "95ef499a08455b3cd72658b078c9c39771bdd473794fdc71e4065d1ea714df07"
+    },
+    {
+      "source": "examples/code_repair/README.md",
+      "document": "docs/examples/code_repair/README.md",
+      "action": "moved",
+      "source_sha256": "2c88ab3070e41d1aa049e97aa9877c02c2ebd386f069a9cf688e99661846cb9f"
+    },
+    {
+      "source": "examples/document_conversion/README.md",
+      "document": "docs/examples/document_conversion/README.md",
+      "action": "moved",
+      "source_sha256": "d16016cf1cfad935f9743fb1b26556bb991a0d4640971d150496156c6546d7cd"
+    },
+    {
+      "source": "examples/invoice/README.md",
+      "document": "docs/examples/invoice/README.md",
+      "action": "moved",
+      "source_sha256": "05d9c8213e63c0252e33aa69b282d18edf416c3c17e16581631ea9fbc31732d6"
+    },
+    {
+      "source": "examples/llm-review/README.md",
+      "document": "docs/examples/llm-review/README.md",
+      "action": "moved",
+      "source_sha256": "c738bdd6edf3c0f02338989ad3ab7bd2b1b908eb1ab9fa7aafb7c0aba869c8b6"
+    },
+    {
+      "source": "examples/research/README.md",
+      "document": "docs/examples/research/README.md",
+      "action": "moved",
+      "source_sha256": "a7c533949218d710affe08bb9d72bd21e0cfeb27e8808902c0d22cd31914330d"
+    },
+    {
+      "source": "examples/smolagents/README.md",
+      "document": "docs/examples/smolagents/README.md",
+      "action": "moved",
+      "source_sha256": "cd67064af449e6aa0b0da18355227df9dfa9417ebe4a583078a546cc43e1e271"
+    },
+    {
+      "source": "examples/smolagents/VALIDATION.zh-CN.md",
+      "document": "docs/validation/SMOLAGENTS_VALIDATION.zh-CN.md",
+      "action": "moved",
+      "source_sha256": "049e2cd094c1d4cf7a6579592edacf79edcc1e4eeb781ca4e57f56bdef93a01b"
+    },
+    {
+      "source": "examples/smolagents/verified/generated.offline.md",
+      "document": "docs/reference-assets/examples/smolagents/verified/generated.offline.md",
+      "action": "copied",
+      "source_sha256": "dacfab6e0e1c1ed5da0e049b495fec92b364a6be6cbbf2f6fd700fe442aea145"
+    },
+    {
+      "source": "examples/smolagents/verified/offline.md",
+      "document": "docs/reference-assets/examples/smolagents/verified/offline.md",
+      "action": "copied",
+      "source_sha256": "e90e146326403de90439507f4b8b1e01dca098cd54381e6792756e7801b05700"
+    },
+    {
+      "source": "output/reviews/2026-10-04-new-features.md",
+      "document": "docs/reviews/2026-10-04-new-features.md",
+      "action": "moved",
+      "source_sha256": "198a115f2de1e6265e5c75260c55c536bef6e59845c89332b68d41dc3e40c6eb"
+    },
+    {
+      "source": "skills/opencode-trace-review/SKILL.md",
+      "document": "docs/reference-assets/skills/opencode-trace-review/SKILL.md",
+      "action": "copied",
+      "source_sha256": "3dcb7a9d0fcdb9b3432f73ff745c2dc2b7e3f36b2703df53ff1a175d276e76da"
+    },
+    {
+      "source": "skills/opencode-trace-review/references/advanced.md",
+      "document": "docs/reference-assets/skills/opencode-trace-review/references/advanced.md",
+      "action": "copied",
+      "source_sha256": "00a25011616d9650d7e502475637db395030e31d094cfa7373484e0a746e9488"
+    },
+    {
+      "source": "skills/opencode-trace-review/references/custom-tasks.md",
+      "document": "docs/reference-assets/skills/opencode-trace-review/references/custom-tasks.md",
+      "action": "copied",
+      "source_sha256": "4e6bca0e8601538d6ef0fb3e71bf5ee60e7b6689da0eaf9313140d91a8a2960b"
+    },
+    {
+      "source": "skills/opencode-trace-review/references/llm-review.md",
+      "document": "docs/reference-assets/skills/opencode-trace-review/references/llm-review.md",
+      "action": "copied",
+      "source_sha256": "7a01aa37b3de4a8931896125a93c4a764fdfd30c8569051aaeab2095c0757688"
+    },
+    {
+      "source": "src/agent_trace_review/fixtures/document_conversion/README.md",
+      "document": "docs/reference-assets/src/agent_trace_review/fixtures/document_conversion/README.md",
+      "action": "copied",
+      "source_sha256": "9651fa0976fdac6bf264549bd5a05df142f872f15a21157ddbdd5acd05f0d13b"
+    },
+    {
+      "source": "src/agent_trace_review/fixtures/document_conversion/correct.md",
+      "document": "docs/reference-assets/src/agent_trace_review/fixtures/document_conversion/correct.md",
+      "action": "copied",
+      "source_sha256": "231951f8c8dc993fa5dece919f510bd5a8989823abf6fad68e2c95b56067f38a"
+    },
+    {
+      "source": "src/agent_trace_review/templates/invoice/README.md",
+      "document": "docs/reference-assets/src/agent_trace_review/templates/invoice/README.md",
+      "action": "copied",
+      "source_sha256": "05d9c8213e63c0252e33aa69b282d18edf416c3c17e16581631ea9fbc31732d6"
+    },
+    {
+      "source": "src/agent_trace_review/templates/llm-review/README.md",
+      "document": "docs/reference-assets/src/agent_trace_review/templates/llm-review/README.md",
+      "action": "copied",
+      "source_sha256": "c738bdd6edf3c0f02338989ad3ab7bd2b1b908eb1ab9fa7aafb7c0aba869c8b6"
+    },
+    {
+      "source": "src/agent_trace_review/templates/research/README.md",
+      "document": "docs/reference-assets/src/agent_trace_review/templates/research/README.md",
+      "action": "copied",
+      "source_sha256": "a7c533949218d710affe08bb9d72bd21e0cfeb27e8808902c0d22cd31914330d"
+    }
+  ]
+}

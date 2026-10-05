@@ -1,0 +1,64 @@
+# 验证记录索引
+
+最新验收：[源码评测规划与质量增强（2026-10-05）](SOURCE_GUIDED_VALIDATION.zh-CN.md)，后端 345 通过、2 跳过，浏览器 3 通过；包含并发、独立答案、漏测清单、重复稳定性及安装包验证。
+
+历史记录按各自验证日期和范围保留，包括 [模型与工具遥测（2026-10-04）](TARGET_TELEMETRY_VALIDATION.zh-CN.md)、[仓库自动部署并评测](REPOSITORY_ASSESSMENT_VALIDATION.zh-CN.md)、[自动生成测试文件](SUITE_GENERATION_VALIDATION.zh-CN.md)、[smolagents 框架/真实模型接入](SMOLAGENTS_VALIDATION.zh-CN.md)、[主动 Agent 评测与服务部署](ACTIVE_ASSESSMENT_VALIDATION.zh-CN.md)、[代码修复](TASK2_VALIDATION.zh-CN.md) 和 [文档转换](TASK3_VALIDATION.zh-CN.md)；当前项目状态见 [开发交接](../planning/HANDOFF.zh-CN.md)。
+
+---
+
+# 0.3.0 API + Token 大模型评审验证
+
+- 后端与启动器：145 项 pytest 测试通过，其中新增 25 项，覆盖只有输入输出的任务、模型 pass/fail/unknown、原有规则失败不可覆盖、缓存、无效/重复/遗漏结果、错误引用、401/429/重定向、超时、输出过大、截断、拒绝、CLI、HTTP、Token 不泄露及服务端 Token 不转发到替换接口。
+- 浏览器：4 项 Playwright 流程通过，覆盖既有评估、比较、通用 Profile、移动布局，以及 API/Token 输入、真实本地 HTTP 调用链、评审保存、导出和 Token 清空。最终结果卡片已重新验证。
+- 分发：0.3.0 wheel 在源码之外加载成功，内含网页、输入输出模板与模型评审模块；通过模拟 HTTP transport 验证。skill 结构、Ruff、依赖锁文件校验通过。
+- 已安装 skill 独立验证：从临时目录创建模板、导入输入输出、调用本地模拟 API、保存带模型来源的新评估版本。无 OpenCode、过程事件或 Scout 要求。
+- 修正浏览器配置异步加载可能覆盖用户刚输入 API 地址/模型的问题。
+
+所有模型调用测试使用本地模拟 API 或 httpx MockTransport，未使用真实密钥、未发生付费模型调用。测试验证的是协议与产品流程，不证明模型评审准确性；真实提供商对参数、模型 ID 和 JSON 格式的支持需在用户配置后验证。
+
+Token 只用于请求认证；报告记录模型、API 地址、评审标准、材料快照与提供商报告的用量，费用保持未知。模型判断参与所声明的 Profile 验收并明确标注来源，不替代独立事实核验。
+
+---
+
+# 0.2.0 通用 Agent 与自定义评估验证
+
+- 后端与启动器：120 项 pytest 测试通过。覆盖 OpenCode 兼容、通用导入、逐调用用量、只读属性、失败恢复、JSON 规则、部分/缺失证据、规则类型、版本比较、外部结果绑定、错误引用拒绝、CLI 模板完整流程和 Judge 保留既有验收结果。
+- 网页：3 项 Playwright 流程通过，涵盖原有代码评估与比较、移动布局、通用轨迹及 Profile 导入、证据链接、最终结果与任务验收列表；截图已检查。
+- 分发：wheel 在源码之外加载成功，包含内置网页和两类模板；HTTP 导入与 Profile 验收通过；skill 结构校验和 Ruff 通过。
+- 旧版基线：0.1.0 引擎实际拒绝通用发票轨迹，未生成运行 ID 或报告，确认原有能力缺口。
+- 独立 skill 试用：仅依据 skill 文档完成三种场景。用户给定的发票字段规则为 pass（3/3）；实际运行示例外部评估器后金额规则 pass，并导出指定 revision；调研模板缺少 facts 结果时为 inconclusive，其他结构/预算规则独立展示。
+- 试用修正：移除通用报告中的代码验收通过率，明确源轨迹覆盖与 Profile 结果的区别，修正未提交 external 结果的说明；文档明确每次评估使用完整 Profile，不合并历史规则。
+- 启动器缓存：同版本 wheel 重建曾被 uv 复用旧缓存。现在以经校验的 SHA-256 建立运行包路径，测试覆盖内容变化导致依赖身份变化；实际启动路径已确认加载最终代码与上述报告修正。
+
+基础分析和所有验证均未调用付费模型。测试数据为合成样例，不构成真实 agent 的准确率或模型排名。自定义程序由用户单独运行；哈希绑定只能确认对应的输入/规则，不能认证外部验收结论真实性。内置 LLM Judge 仍限于代码任务，通用专项评审通过 external 协议接入。
+
+部分 uv 版本在独立目录启动时会显示无项目警告，实际命令成功；测试依赖还显示非阻断的 Starlette/httpx 弃用提示。
+
+---
+
+# OpenCode v0.1 验证记录
+
+验证日期：2026-09-13。本记录针对本地 OpenCode 版本实现，不代表真实 agent/model 的性能评测结果。
+
+| 检查 | 结果 | 范围 |
+| --- | --- | --- |
+| Python 测试 | 75 passed | 导入、幂等与并发、证据引用、归一化、复杂 shell、验收匹配、回归/缺失测试、路径约束、比较、API、Judge |
+| Ruff | 通过 | `src scripts tests` |
+| TypeScript / Vite | 构建通过 | 生产前端与生成的模型契约 |
+| Playwright / Chrome | 2 passed | 导入、报告证据、诊断定位、最终 diff、导出、双运行比较；390 px 手机布局和弹窗键盘交互 |
+| OpenCode 原生格式 | 通过，CLI 1.18.18 | 独立临时 XDG 目录中原生 import/export 往返；6 messages、10 normalized events、4 tool calls |
+| Inspect Scout 实际 bridge | 通过，0.5.2 | 离线 mock provider；单次生成、输入角色、无执行工具、输出校验、用量记录 |
+| wheel 独立工件 | 通过 | 解包到临时目录后使用该包导入 API；内含前端资源，示例可导入 |
+| 合成日志性能 | 10,000 tool calls，13,427,890 bytes | 本机导入并分析 0.706 s；从 SQLite 重新读取 0.079 s；一次测量，不是通用性能保证 |
+
+后端测试有两条来自 Starlette/AnyIO 的弃用提示，不影响通过。浏览器控制台没有观察到运行时错误。界面已检查桌面与手机截图，调整了小字和低对比度文字。
+
+代码状态与 suite hash 由提供验收材料的一方保证；本版本不执行 independent verifier，也不重新计算外部报告的真实性。原生格式检查使用合成会话，没有读取用户现有会话、访问真实模型或消耗付费 API。
+
+尚未验证的部分：其他 OpenCode 版本、真实任务集上的 detector 精确率/召回率、真实 provider 的 Judge 回答质量与费用、多任务多次运行的模型统计排名。使用方法和后续范围见 [README](../../README.md) 与 [实施计划](../planning/IMPLEMENTATION_PLAN.zh-CN.md)。
+
+---
+
+# 逐次模型与工具记录（2026-10-04）
+
+协议、统计、网页及打包验证，12 题真实框架 offline 校准和一题真实 DeepSeek 记录见 [遥测验收](TARGET_TELEMETRY_VALIDATION.zh-CN.md)。用量及内部调用由目标自报，缺失字段保持未知。
